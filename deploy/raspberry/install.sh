@@ -90,19 +90,24 @@ CONF
 sudo systemctl enable --now unattended-upgrades >/dev/null
 
 # ------------------------------------------------------------ Docker
+# Le dépôt officiel de Docker, même si Docker est déjà là : il fournit
+# Compose (« docker compose ») et Buildx, absents du Docker de Debian.
+bold "Docker (dépôt officiel)"
+sudo install -m 0755 -d /etc/apt/keyrings
+curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
+sudo chmod a+r /etc/apt/keyrings/docker.gpg
+echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" \
+	| sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
+sudo apt-get update
 if ! command -v docker >/dev/null; then
-	bold "Installation de Docker (dépôt officiel)"
-	sudo install -m 0755 -d /etc/apt/keyrings
-	curl -fsSL https://download.docker.com/linux/debian/gpg | sudo gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
-	sudo chmod a+r /etc/apt/keyrings/docker.gpg
-	echo "deb [arch=$ARCH signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/debian $VERSION_CODENAME stable" \
-		| sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-	sudo apt-get update
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
 		docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-else
-	bold "Docker est déjà installé"
+elif ! docker compose version >/dev/null 2>&1; then
+	echo "Docker est là, sans Compose : ajout de Compose et Buildx."
+	sudo DEBIAN_FRONTEND=noninteractive apt-get -y install docker-compose-plugin docker-buildx-plugin \
+		|| sudo DEBIAN_FRONTEND=noninteractive apt-get -y install docker-compose
 fi
+docker compose version || fail "Docker Compose reste introuvable."
 sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json >/dev/null <<'CONF'
 {
