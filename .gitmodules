@@ -1,0 +1,3 @@
+[submodule "django-generic"]
+	path = django-generic
+	url = https://github.com/Xibutox/django-generic.git

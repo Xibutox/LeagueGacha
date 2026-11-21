@@ -1,0 +1,23 @@
+{% extends "generic/resource/page.html" %}
+{% load static %}
+
+{% block extrastyle %}
+  <link rel="stylesheet" href="{% static 'css/cards.css' %}">
+  <style>
+    .card-preview { display: flex; gap: 2rem; align-items: flex-start; flex-wrap: wrap; }
+    .card-preview .lcard-holder { width: 220px; }
+  </style>
+{% endblock %}
+
+{% block page_content %}
+  <div class="card-preview">
+    {% for rarity in rarities %}
+      <div class="lcard-holder game-cards">{% include "cards/_card.html" with card=card rarity=rarity %}</div>
+    {% endfor %}
+  </div>
+  <div class="prose">
+    <p>La carte à chaque rareté, telle qu'elle apparaît dans les boosters et les collections.
+       Note {{ card.overall }}{% if card.stats %}, percentile {{ card.stats.percentile }}{% endif %}.</p>
+    {% if not card.image_url %}<p>Pas de photo : choisis-en une dans le formulaire ou relance l'import.</p>{% endif %}
+  </div>
+{% endblock %}

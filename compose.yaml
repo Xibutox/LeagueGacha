@@ -1,0 +1,87 @@
+# Stack de développement : Postgres, Redis, Django (runserver) et un worker
+# Celery pour les imports Leaguepedia lancés depuis la gestion.
+#
+#   docker compose up --build -d
+#   docker compose exec web python manage.py createsuperuser
+#
+# Jeu : http://localhost:8000/   Gestion : http://localhost:8000/gestion/
+#
+# Mots de passe fixes, ports publiés : à ne jamais exposer hors de ta
+# machine.
+
+name: wiki-lol-esport
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile
+  image: wiki-lol-esport:dev
+  # Réglages du jeu et de Leaguepedia (facultatif : copier .env.example).
+  env_file:
+    - path: .env
+      required: false
+  environment:
+    DJANGO_SETTINGS_MODULE: config.settings.dev
+    DATABASE_URL: postgres://wikilol:wikilol@db:5432/wikilol
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/1
+  volumes:
+    - .:/app
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: wikilol
+      POSTGRES_USER: wikilol
+      POSTGRES_PASSWORD: wikilol
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wikilol -d wikilol"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # Les migrations à chaque démarrage, avant le reste.
+  migrate:
+    <<: *app
+    command: python manage.py migrate --noinput
+
+  web:
+    <<: *app
+    command: python manage.py runserver 0.0.0.0:8000
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    ports:
+      - "${WEB_PORT:-8000}:8000"
+
+  # Les opérations en tâche de fond (import Leaguepedia). Celery ne se
+  # recharge pas tout seul : devworker le relance quand esport/, cards/ ou
+  # config/ change.
+  worker:
+    <<: *app
+    command: python manage.py devworker
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  postgres-data:

@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block title %}Classement — Wiki LoL Esport{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Classement</h1>
+    <p>Chaque joueur est classé sur sa meilleure équipe complète : la moyenne de ses 5 compositions.</p>
+  </div>
+  {% if user.is_authenticated %}<a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Monter une équipe</a>{% endif %}
+</div>
+
+{% if user.is_authenticated %}
+  <p class="my-rank">
+    {% if mine %}Tu es <b>{{ mine.0 }}{% if mine.0 == 1 %}er{% else %}e{% endif %}</b> avec « {{ mine.1.name }} », {{ mine.1.score|floatformat:1 }} points.
+    {% else %}Tu n'es pas encore classé : <a href="{% url 'cards:rosters' %}">complète une équipe</a>.{% endif %}
+  </p>
+{% endif %}
+
+{% if podium %}
+<div class="podium">
+  {% for rank, roster in podium %}
+    <div class="podium-step p{{ rank }}" style="order: {% if rank == 1 %}2{% elif rank == 2 %}1{% else %}3{% endif %}">
+      <div class="rank">{{ rank }}</div>
+      <div class="who">{{ roster.user.username }}</div>
+      <div class="muted small">{{ roster.name }}</div>
+      <div class="score">{{ roster.score|floatformat:1 }}</div>
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<table class="ranking">
+  <thead><tr><th>#</th><th>Joueur</th><th>Équipe</th><th>Alignement</th><th class="num">Score</th></tr></thead>
+  <tbody>
+    {% for rank, roster in rows %}
+      <tr{% if roster.user_id == user.pk %} class="me"{% endif %}>
+        <td class="rank">{{ rank }}</td>
+        <td>{{ roster.user.username }}</td>
+        <td>{{ roster.name }}</td>
+        <td>
+          <div class="mini-lineup">
+            {% for slot in roster.slots.all %}
+              {% with first=slot.champion_list.0 %}
+              <span title="{{ slot.role }}">{% if first %}<img src="{{ first.icon_url }}" alt="" class="champ-icon small" loading="lazy">{% endif %}{{ slot.card.player.ign }}</span>
+              {% endwith %}
+            {% endfor %}
+          </div>
+        </td>
+        <td class="num"><b>{{ roster.score|floatformat:1 }}</b></td>
+      </tr>
+    {% empty %}
+      <tr><td colspan="5" class="muted">Personne n'est encore classé. Une équipe complète suffit pour ouvrir le bal.</td></tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}

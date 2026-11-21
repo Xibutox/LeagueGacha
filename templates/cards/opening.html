@@ -1,0 +1,74 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Ouverture — {{ opening.booster.name }}{% endblock %}
+{% block body_class %}is-stage{% endblock %}
+{% block content %}
+<div class="opening" id="opening" data-animate="{{ animate|yesno:'1,0' }}" style="--booster: {{ opening.booster.color|default:'#3fd0e0' }}">
+  <div class="opening-stage">
+    {% if animate %}
+    <button type="button" class="pack{% if opening.booster.image %} has-image{% endif %}" id="pack" aria-label="Ouvrir le booster {{ opening.booster.name }}"{% if opening.booster.image %} style="--pack-image: url('{{ opening.booster.image.url }}')"{% endif %}>
+      <span class="pack-top"><span>Déchirer ici</span></span>
+      <span class="pack-body">
+        <b>{{ opening.booster.name }}</b>
+        <span>{{ items|length }} cartes</span>
+      </span>
+      <span class="pack-shine"></span>
+    </button>
+    <p class="opening-hint" id="hint">Clique sur le booster pour l'ouvrir</p>
+    {% endif %}
+
+    <div class="deal{% if not animate %} dealt{% endif %}" id="deal" {% if animate %}hidden{% endif %}>
+      {% for item in items %}
+        <div class="flip{% if not animate %} revealed{% endif %}" tabindex="0"
+             style="--i: {{ forloop.counter0 }}; --rarity-color: {{ item.rarity.color }}"
+             data-rarity="{{ item.rarity.order }}" data-new="{{ item.was_new|yesno:'1,0' }}"
+             aria-label="Carte {{ forloop.counter }}, à retourner">
+          <span class="beam" aria-hidden="true"></span>
+          <div class="flip-inner">
+            <div class="flip-back"><span></span></div>
+            <div class="flip-front">
+              <a href="{% url 'cards:card_detail' item.card.pk %}">
+                {% include "cards/_card.html" with card=item.card rarity=item.rarity is_new=item.was_new %}
+              </a>
+            </div>
+          </div>
+          <p class="pull-note">
+            {% if item.was_new %}<span class="is-new">Nouveau joueur</span>
+            {% elif item.can_fuse %}<span class="is-fuse">{{ item.same }} {{ item.rarity.name|lower }}{{ item.same|pluralize }} : fusion possible</span>
+            {% else %}<span>{{ item.same }} exemplaire{{ item.same|pluralize }} {{ item.rarity.name|lower }}{{ item.same|pluralize }}</span>{% endif %}
+          </p>
+        </div>
+      {% endfor %}
+    </div>
+    {% if animate %}<p class="opening-hint" id="flip-hint" hidden>Retourne les cartes une à une, ou
+      <button type="button" class="linklike reveal-all" id="reveal-all">révèle tout</button></p>{% endif %}
+  </div>
+
+  <section class="opening-summary{% if not animate %} shown{% endif %}" id="summary" aria-live="polite">
+    {% if best %}
+      <h1 style="--rarity: {{ best.rarity.color }}">Meilleur tirage : <span class="best">{{ best.card.player.ign }}</span>, {{ best.rarity.name|lower }}</h1>
+    {% endif %}
+    <p class="muted">
+      {{ new_count }} nouveau{{ new_count|pluralize:"x" }} joueur{{ new_count|pluralize }}{% if duplicate_count %}, {{ duplicate_count }} doublon{{ duplicate_count|pluralize }}{% endif %}.
+      {% if fusable %}De quoi fusionner :
+        {% for item in fusable %}<a href="{% url 'cards:card_detail' item.card.pk %}">{{ item.card.player.ign }}</a>{% if not forloop.last %}, {% endif %}{% endfor %}.
+      {% endif %}
+    </p>
+    <div class="actions">
+      {% if status %}
+        {% if status.unlimited or status.available %}
+          <form method="post" action="{% url 'cards:open_booster' opening.booster.slug %}" class="inline">{% csrf_token %}
+            <button class="btn btn-gold" type="submit">Ouvrir un autre {{ opening.booster.name }}{% if not status.unlimited %} ({{ status.available }}){% endif %}</button>
+          </form>
+        {% elif status.next_at %}
+          <span class="muted">Prochain {{ opening.booster.name }} dans <time data-countdown datetime="{{ status.next_at|date:'c' }}"></time></span>
+        {% endif %}
+      {% endif %}
+      <a class="btn btn-ghost" href="{% url 'cards:collection' %}">Voir ma collection</a>
+      <a class="btn btn-ghost" href="{% url 'cards:home' %}">Autres boosters</a>
+    </div>
+  </section>
+</div>
+<div class="opening-flash" id="flash"></div>
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/booster.js' %}?v=7"></script>{% endblock %}

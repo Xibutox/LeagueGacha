@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+{% block title %}Collection — Wiki LoL Esport{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Collection</h1>
+    <p>Chaque joueur existe à toutes les raretés. {% if fusable_count %}<a href="?possession=fusion">{{ fusable_count }} joueur{{ fusable_count|pluralize }} prêt{{ fusable_count|pluralize }} à fusionner</a>.{% else %}Deux exemplaires d'une rareté donnent un exemplaire de la suivante.{% endif %}</p>
+  </div>
+  <a class="btn btn-gold" href="{% url 'cards:home' %}#boosters">Ouvrir des boosters</a>
+</div>
+
+{% if progress %}
+<div class="periods">
+  {% for s in progress %}
+    <a class="period{% if s.slug == filters.periode %} is-active{% endif %}" href="?periode={{ s.slug }}">
+      <span>{{ s.name }}</span><small>{{ s.owned }} / {{ s.total }}</small>
+      <span class="meter" aria-hidden="true"><span style="width: {% widthratio s.owned s.total 100 %}%"></span></span>
+    </a>
+  {% endfor %}
+</div>
+{% endif %}
+
+<form class="filters" method="get">
+  <input type="search" name="q" value="{{ filters.q }}" placeholder="Joueur ou équipe" aria-label="Chercher un joueur ou une équipe">
+  <select name="periode" aria-label="Période">
+    <option value="">Toutes les périodes</option>
+    {% for s in splits %}<option value="{{ s.slug }}" {% if s.slug == filters.periode %}selected{% endif %}>{{ s.name }}</option>{% endfor %}
+  </select>
+  <select name="role" aria-label="Poste">
+    <option value="">Tous les postes</option>
+    {% for r in roles %}<option value="{{ r }}" {% if r == filters.role %}selected{% endif %}>{{ r }}</option>{% endfor %}
+  </select>
+  <select name="rarete" aria-label="Rareté possédée">
+    <option value="">Toutes les raretés</option>
+    {% for r in rarities %}<option value="{{ r.code }}" {% if r.code == filters.rarete %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+  </select>
+  <select name="possession" aria-label="Possession">
+    <option value="">Possédés ou non</option>
+    <option value="possedees" {% if filters.possession == "possedees" %}selected{% endif %}>Possédés</option>
+    <option value="manquantes" {% if filters.possession == "manquantes" %}selected{% endif %}>Manquants</option>
+    <option value="fusion" {% if filters.possession == "fusion" %}selected{% endif %}>Prêts à fusionner</option>
+  </select>
+  <button class="btn btn-small" type="submit">Filtrer</button>
+  {% if filters.q or filters.periode or filters.role or filters.rarete or filters.possession %}<a href="{% url 'cards:collection' %}" class="small">Tout afficher</a>{% endif %}
+</form>
+
+<div class="card-grid">
+  {% for row in rows %}
+    <div class="card-cell">
+      <a href="{% url 'cards:card_detail' row.card.pk %}">
+        {% include "cards/_card.html" with card=row.card rarity=row.best missing=row.best|yesno:",True" %}
+      </a>
+      <div class="copies">
+        {% for rarity, quantity in row.copies %}
+          <span class="copy{% if rarity.fusion_cost and quantity >= rarity.fusion_cost %} is-fusable{% endif %}" style="--rarity: {{ rarity.color }}" title="{{ quantity }} {{ rarity.name|lower }}{{ quantity|pluralize }}">{{ rarity.name|slice:":1" }} ×{{ quantity }}</span>
+        {% endfor %}
+        {% if row.fusable %}<span class="tag-fuse">fusion prête</span>{% endif %}
+      </div>
+    </div>
+  {% empty %}
+    <p class="muted">Aucun joueur ne correspond à ces filtres.</p>
+  {% endfor %}
+</div>
+{% endblock %}

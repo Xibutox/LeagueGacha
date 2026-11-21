@@ -1,0 +1,6 @@
+# Les scripts du serveur gardent des fins de ligne Unix, même extraits sous Windows.
+*.sh text eol=lf
+deploy/Caddyfile text eol=lf
+compose*.yaml text eol=lf
+*.ps1 text eol=crlf
+*.bat text eol=crlf

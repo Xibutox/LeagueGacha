@@ -1,0 +1,9 @@
+# Les dépendances du projet lui-même. Le framework (django-generic, avec
+# Django, DRF, Channels, Celery, psycopg) s'installe depuis le sous-module :
+#   pip install "./django-generic[export,events,tasks,postgres]" -r requirements.txt
+requests>=2.32
+Pillow>=11.0
+
+# Tests
+pytest>=8.0
+pytest-django>=4.9

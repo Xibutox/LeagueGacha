@@ -1,0 +1,29 @@
+{% load game %}{# Carte joueur. Variables : card, rarity (l'exemplaire montré ; aucune = pas possédée), missing, is_new #}
+<div class="lcard{% if missing %} missing{% endif %}{% if rarity %} r{{ rarity.order }}{% endif %}" style="--rarity: {{ rarity.color|default:'#5a6478' }}">
+  <div class="lcard-top">
+    <span class="ovr">{{ card.overall }}</span>
+    <span class="lcard-badges">
+      {% if card.player.country %}<span class="lcard-flag">{{ card.player.country|flag }}</span>{% endif %}
+      <span class="role role-{{ card.role|lower }}">{{ card.role }}</span>
+    </span>
+  </div>
+  <div class="lcard-photo">
+    {% if card.image_url %}
+      <img src="{{ card.image_url }}" alt="{{ card.player.ign }}" loading="lazy">
+    {% else %}
+      <div class="nophoto">{{ card.player.ign|slice:":2" }}</div>
+    {% endif %}
+    {% if card.team.logo %}<img class="team-logo" src="{{ card.team.logo.url }}" alt="{{ card.team.name }}">{% endif %}
+  </div>
+  <div class="lcard-name">{{ card.player.ign }}</div>
+  <div class="lcard-meta">{{ card.team.short_name|default:card.team.name }} · {{ card.split.name }}</div>
+  {% if card.stats %}
+  <div class="lcard-stats">
+    <div><b>{{ card.stats.kda|floatformat:1 }}</b><small>KDA</small></div>
+    <div><b>{{ card.stats.damage_per_min|floatformat:0 }}</b><small>DPM</small></div>
+    <div><b>{{ card.stats.win_rate|floatformat:0 }}%</b><small>Victoires</small></div>
+  </div>
+  {% endif %}
+  <div class="lcard-rarity">{% if rarity %}{{ rarity.name }}{% if rarity.score_bonus %} <span>+{{ rarity.score_bonus|floatformat:"-1" }} %</span>{% endif %}{% else %}Pas encore à toi{% endif %}</div>
+  {% if is_new %}<span class="badge-new">Nouveau joueur</span>{% endif %}
+</div>

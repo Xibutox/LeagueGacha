@@ -1,0 +1,115 @@
+# Stack de production : à lancer sur le Raspberry Pi (ou tout serveur).
+#
+#   docker compose -f compose.prod.yaml --env-file .env.prod up -d --build
+#
+# deploy/raspberry/install.sh crée .env.prod (secrets tirés au hasard) et
+# lance tout. Seul Caddy publie des ports :
+#   - 80 et 443 : le site public (HTTPS automatique, Let's Encrypt) ;
+#   - 8443      : l'accès réseau local (la gestion), certificat local.
+# Postgres, Redis, Django et Celery ne sont joignables que par Caddy et
+# entre eux, sur le réseau interne de Docker.
+
+name: wiki-lol-esport
+
+x-app: &app
+  build:
+    context: .
+    dockerfile: docker/Dockerfile.prod
+  image: wiki-lol-esport:prod
+  restart: unless-stopped
+  env_file: .env.prod
+  environment:
+    DJANGO_SETTINGS_MODULE: config.settings.prod
+    DATABASE_URL: postgres://wikilol:${POSTGRES_PASSWORD:?}@db:5432/wikilol
+    REDIS_URL: redis://redis:6379/0
+    CELERY_BROKER_URL: redis://redis:6379/1
+  volumes:
+    - static:/app/staticfiles
+    - media:/app/media
+    - game-media:/app/game_media
+  depends_on:
+    db:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  security_opt:
+    - no-new-privileges:true
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: wikilol
+      POSTGRES_USER: wikilol
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U wikilol -d wikilol"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --save "" --appendonly no
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    security_opt:
+      - no-new-privileges:true
+
+  # Migrations et fichiers statiques, à chaque démarrage.
+  migrate:
+    <<: *app
+    restart: "no"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput"
+
+  web:
+    <<: *app
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: celery -A config worker --loglevel=info --concurrency=2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8443:8443"
+    environment:
+      SITE_DOMAIN: ${SITE_DOMAIN:?}
+      LAN_HOST: ${LAN_HOST:?}
+      ACME_EMAIL: ${ACME_EMAIL:?}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - static:/srv/static:ro
+      - game-media:/srv/game-media:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    depends_on:
+      - web
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  postgres-data:
+  static:
+  media:
+  game-media:
+  caddy-data:
+  caddy-config:

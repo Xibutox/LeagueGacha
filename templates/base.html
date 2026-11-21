@@ -1,0 +1,61 @@
+{% load static %}<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Wiki LoL Esport{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
+  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=7">
+  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=7">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+  <a class="skip" href="#contenu">Aller au contenu</a>
+  {% with section=request.resolver_match.url_name %}
+  <header class="topbar">
+    <a class="brand" href="{% url 'cards:home' %}" aria-label="Accueil">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="brand-name">Wiki LoL <b>Esport</b></span>
+    </a>
+    <nav class="tabs" aria-label="Navigation principale">
+      <a href="{% url 'cards:home' %}" class="tab{% if section == 'home' or section == 'opening' %} is-active{% endif %}">
+        Boosters{% if user.is_authenticated %}{% with n=packs_ready %}{% if n %}<span class="tab-count" title="Boosters prêts à ouvrir">{{ n }}</span>{% endif %}{% endwith %}{% endif %}
+      </a>
+      {% if user.is_authenticated %}
+        <a href="{% url 'cards:collection' %}" class="tab{% if section == 'collection' or section == 'card_detail' %} is-active{% endif %}">Collection</a>
+        <a href="{% url 'cards:rosters' %}" class="tab{% if section == 'rosters' or section == 'roster_new' or section == 'roster_edit' %} is-active{% endif %}">Équipes</a>
+      {% endif %}
+      <a href="{% url 'cards:ranking' %}" class="tab{% if section == 'ranking' %} is-active{% endif %}">Classement</a>
+    </nav>
+    <div class="account">
+      {% if user.is_authenticated %}
+        {% if user.is_staff %}<a href="{% url 'site:index' %}" class="account-link">Gestion</a>{% endif %}
+        <span class="account-name">{{ user.username }}</span>
+        <form method="post" action="{% url 'logout' %}" class="inline">{% csrf_token %}
+          <button type="submit" class="account-link linklike">Se déconnecter</button>
+        </form>
+      {% else %}
+        <a href="{% url 'login' %}" class="account-link">Se connecter</a>
+        <a href="{% url 'signup' %}" class="btn btn-gold btn-small">Créer un compte</a>
+      {% endif %}
+    </div>
+  </header>
+  {% endwith %}
+
+  <main class="container" id="contenu">
+    {% for message in messages %}
+      <div class="flash flash-{{ message.tags }}" role="status">{{ message }}</div>
+    {% endfor %}
+    {% block content %}{% endblock %}
+  </main>
+
+  <footer class="footer">
+    Données <a href="https://lol.fandom.com" target="_blank" rel="noopener">Leaguepedia</a> (CC BY-SA) et Data Dragon.
+    Projet de fan, non affilié à Riot Games.
+  </footer>
+  <script src="{% static 'js/countdown.js' %}?v=7" defer></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

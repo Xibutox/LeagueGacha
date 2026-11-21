@@ -1,0 +1,270 @@
+"""Les opérations lancées depuis la gestion (django-generic).
+
+Une opération est une tâche que démarre un bouton : en tâche de fond, elle
+part au worker Celery (ou dans un thread sans broker) et la page reçoit
+son rapport à la fin. Voir django-generic/docs/operations.md.
+"""
+
+from typing import Any
+
+from django.urls import reverse
+from django.utils.translation import gettext_lazy as _
+
+from cards.services import download_card_images, ensure_boosters, generate_cards, regroup_splits
+from generic.tasks import operation
+
+from .importer import LeaguepediaImporter
+from .models import Champion, Split, Team
+
+
+def _split_url(split):
+    return reverse("site:esport_split_detail", args=[split.pk])
+
+
+def _section_logger(section):
+    """Les messages de l'importeur deviennent des lignes du rapport ;
+    ceux qui commencent par « ! » sont des avertissements."""
+
+    def log(message):
+        text = str(message).strip()
+
+        if text.startswith("!"):
+            section.warning(text.lstrip("! "))
+        elif text:
+            section.info(text)
+
+    return log
+
+
+@operation(
+    name="esport.import_splits",
+    label=_("Importer depuis Leaguepedia"),
+    description=_(
+        "Récupère les parties, les joueurs et les photos des splits "
+        "choisis, recalcule les stats et génère les cartes."
+    ),
+    icon="cloud_download",
+    background=True,
+)
+def import_splits(run: Any, ids: list[Any], images: bool = True) -> str:
+    return _import_splits(run, ids, images)
+
+
+def _import_splits(run: Any, ids: list[Any], images: bool = True) -> str:
+    """Le travail des deux opérations d'import : une section par split."""
+    importer = LeaguepediaImporter()
+    splits = list(Split.objects.filter(pk__in=ids).select_related("league"))
+    run.note(f"{len(splits)} split(s) à importer")
+
+    for split in splits:
+        with run.report.section(
+            split.name, url=_split_url(split), isolated=True
+        ) as section:
+            importer.log = _section_logger(section)
+            result = importer.import_split(split, with_images=images)
+
+            if not result.get("rows"):
+                section.warning("Aucune partie trouvée pour ce split.")
+                continue
+
+            created, updated = generate_cards(split)
+            section.success(
+                f"{created} carte(s) créée(s), {updated} mise(s) à jour."
+            )
+
+            # Les boosters tout de suite : on peut jouer avec ce split
+            # sans attendre la fin de l'import des suivants.
+            for name in ensure_boosters():
+                section.success(f"Booster « {name} » créé.")
+
+            if images:
+                count = download_card_images(split, importer)
+                section.info(f"{count} photo(s) téléchargée(s).")
+
+    _sync_new_champions(run)
+    return f"{len(splits)} split(s) importé(s)."
+
+
+def _sync_new_champions(run: Any) -> None:
+    """Les champions vus pour la première fois : profil et images Data Dragon."""
+    from django.conf import settings
+
+    if not settings.DDRAGON_AUTO_SYNC or not Champion.objects.filter(synced_at__isnull=True).exists():
+        return
+    from .ddragon import sync_champions
+
+    with run.report.section("Champions (Data Dragon)") as section:
+        try:
+            result = sync_champions(log=_section_logger(section))
+        except Exception as exc:  # noqa: BLE001 - l'import reste bon sans les images
+            section.warning(f"Data Dragon injoignable : {exc}")
+            return
+        section.success(f"{result['created']} champion(s) ajouté(s), {result['images']} image(s).")
+
+
+@operation(
+    name="esport.download_images",
+    label=_("Télécharger les photos manquantes"),
+    description=_(
+        "Télécharge les photos des cartes et les logos qui manquent, sans "
+        "réimporter les parties."
+    ),
+    icon="image",
+    background=True,
+)
+def download_images(run: Any, ids: list[Any]) -> str:
+    importer = LeaguepediaImporter()
+    total = 0
+
+    for split in Split.objects.filter(pk__in=ids):
+        with run.report.section(split.name, url=_split_url(split)) as section:
+            importer.log = _section_logger(section)
+            teams = Team.objects.filter(cards__split=split).distinct()
+            logos = importer.download_images(
+                [(team, "logo_filename", "logo") for team in teams]
+            )
+            photos = download_card_images(split, importer)
+            total += logos + photos
+            section.info(f"{photos} photo(s), {logos} logo(s) téléchargé(s).")
+
+    return f"{total} image(s) téléchargée(s)."
+
+
+@operation(
+    name="esport.recompute_splits",
+    label=_("Recalculer stats et cartes"),
+    description=_(
+        "Recalcule les stats, les notes, les champions et les équipes à partir des "
+        "données déjà importées, sans appel à Leaguepedia."
+    ),
+    icon="calculate",
+)
+def recompute_splits(run: Any, ids: list[Any]) -> str:
+    splits = list(Split.objects.filter(pk__in=ids))
+
+    for split in splits:
+        with run.report.section(
+            split.name, url=_split_url(split), isolated=True
+        ) as section:
+            stats = LeaguepediaImporter.compute_split_stats(split)
+            created, updated = generate_cards(split)
+            section.success(
+                f"{stats} fiche(s) de stats, {created} carte(s) créée(s), "
+                f"{updated} mise(s) à jour."
+            )
+
+    with run.report.section("Boosters") as section:
+        for name in ensure_boosters():
+            section.success(f"Booster « {name} » créé.")
+
+    return f"{len(splits)} split(s) recalculé(s)."
+
+
+@operation(
+    name="esport.sync_leagues",
+    label=_("Synchroniser les ligues"),
+    description=_("Ajoute ou met à jour des ligues de Leaguepedia (nom, région, niveau)."),
+    icon="sync",
+    background=True,
+)
+def sync_leagues(run: Any, names: list[str] | None = None, primary_only: bool = False) -> str:
+    created, updated = LeaguepediaImporter().sync_leagues(names or None, primary_only)
+    if not created and not updated:
+        return "Aucune ligue trouvée : vérifie les noms (LEC, LCK, LFL…)."
+    return f"{created} ligue(s) ajoutée(s), {updated} mise(s) à jour."
+
+
+@operation(
+    name="esport.import_league",
+    label=_("Importer depuis Leaguepedia"),
+    description=_(
+        "Cherche les tournois des ligues et années choisies, crée les "
+        "splits, importe parties, joueurs et photos, génère les cartes et "
+        "les boosters."
+    ),
+    icon="travel_explore",
+    background=True,
+)
+def import_league(
+    run: Any,
+    leagues: list[str],
+    years: list[int],
+    name_like: str = "",
+    include_qualifiers: bool = False,
+    images: bool = True,
+) -> str:
+    importer = LeaguepediaImporter()
+    label = f"Tournois : {', '.join(leagues)} — {', '.join(str(y) for y in years)}"
+
+    with run.report.section(label) as section:
+        importer.log = _section_logger(section)
+        rows = importer.discover(leagues, years, name_like or None)
+
+        if not rows:
+            section.error("Aucun tournoi trouvé pour ces ligues et ces années.")
+            return "Aucun tournoi trouvé."
+
+        tournaments = importer.save_tournaments(
+            rows, include_qualifiers=include_qualifiers
+        )
+        for tournament in tournaments:
+            note = "qualifications : pas de split" if tournament.split is None else f"split : {tournament.split}"
+            section.info(tournament.name, note)
+
+    # Les phases d'une même année d'une ligue locale vont ensemble.
+    with run.report.section("Périodes") as section:
+        for name in regroup_splits(log=_section_logger(section)):
+            section.success(f"{name} : phases regroupées.")
+    for tournament in tournaments:
+        tournament.refresh_from_db()
+    split_ids = sorted(
+        {t.split_id for t in tournaments if t.split_id is not None}
+    )
+    run.note(f"{len(split_ids)} split(s) à importer")
+    _import_splits(run, split_ids, images)
+
+    return f"{len(tournaments)} tournoi(s), {len(split_ids)} split(s) importé(s)."
+
+
+
+
+@operation(
+    name="esport.regroup_splits",
+    label=_("Regrouper les phases par année"),
+    description=_(
+        "Pour chaque ligue locale, réunit les phases d'une même année "
+        "(Cup, splits, playoffs) en une seule période. Les cartes "
+        "possédées et les équipes suivent. L'international reste à part."
+    ),
+    icon="merge",
+)
+def regroup_splits_operation(run: Any) -> str:
+    with run.report.section("Périodes") as section:
+        names = regroup_splits(log=_section_logger(section))
+        for name in names:
+            section.success(f"{name} : phases regroupées.")
+    with run.report.section("Boosters") as section:
+        for name in ensure_boosters():
+            section.success(f"Booster « {name} » créé.")
+    return f"{len(names)} période(s) regroupée(s)." if names else "Rien à regrouper."
+
+
+@operation(
+    name="esport.sync_champions",
+    label=_("Synchroniser les champions"),
+    description=_(
+        "Récupère sur Data Dragon (Riot) tous les champions : titre, "
+        "classes, profil attaque / défense / magie, et leurs images."
+    ),
+    icon="sync",
+    background=True,
+)
+def sync_champions_operation(run: Any, images: bool = True, force_images: bool = False) -> str:
+    from .ddragon import sync_champions
+
+    with run.report.section("Data Dragon") as section:
+        result = sync_champions(images=images, force_images=force_images, log=_section_logger(section))
+    return (
+        f"{result['created']} champion(s) ajouté(s), {result['updated']} mis à jour, "
+        f"{result['images']} image(s) téléchargée(s)."
+    )

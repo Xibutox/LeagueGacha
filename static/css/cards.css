@@ -1,0 +1,169 @@
+/* Le composant carte : utilisé par le jeu et par l'aperçu de la gestion.
+   Ses couleurs sont les siennes, pour rendre pareil dans les deux cadres.
+   La rareté (--rarity) est celle de l'exemplaire montré : cadre, note,
+   reflet. Plus la rareté est haute, plus le cadre brille. */
+.lcard, .flip-back {
+  --lc-text: #eef2fa;
+  --lc-muted: #8d98b3;
+  font-family: "Barlow", system-ui, -apple-system, "Segoe UI", sans-serif;
+}
+.lcard { position: relative; width: 100%; aspect-ratio: 5 / 7.6; padding: 10px;
+  background: linear-gradient(170deg, color-mix(in srgb, var(--rarity) 30%, #141c30), #0a1020 72%);
+  clip-path: polygon(0 14px, 14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  display: flex; flex-direction: column; overflow: hidden; color: var(--lc-text); isolation: isolate; }
+.lcard::before { content: ""; position: absolute; inset: 0; z-index: -1; pointer-events: none;
+  clip-path: inherit; box-shadow: inset 0 0 0 3px var(--rarity); }
+.lcard.r2, .lcard.r3 { background: linear-gradient(170deg, color-mix(in srgb, var(--rarity) 45%, #141c30), #0a1020 75%); }
+.lcard.r3::after { content: ""; position: absolute; inset: 0; pointer-events: none; mix-blend-mode: screen;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.22) 50%, transparent 65%);
+  background-size: 260% 100%; animation: holo 5s linear infinite; }
+@keyframes holo { from { background-position: 130% 0; } to { background-position: -130% 0; } }
+.lcard-top { display: flex; justify-content: space-between; align-items: center; }
+.ovr { font: 800 1.7rem/1 "Barlow Condensed", system-ui, sans-serif; color: var(--rarity); }
+.role { font: 600 .8rem/1 "Barlow Condensed", system-ui, sans-serif; background: rgba(0,0,0,.45); padding: 4px 9px;
+  clip-path: polygon(5px 0, 100% 0, calc(100% - 5px) 100%, 0 100%); }
+.lcard-photo { position: relative; flex: 1; min-height: 0; margin: 8px 0 6px; overflow: hidden;
+  background: radial-gradient(circle at 50% 30%, color-mix(in srgb, var(--rarity) 30%, transparent), rgba(0,0,0,.3)); }
+.lcard-photo img { width: 100%; height: 100%; object-fit: cover; object-position: top; }
+.lcard-photo .team-logo { position: absolute; right: 6px; bottom: 6px; width: 32px; height: 32px; object-fit: contain;
+  background: rgba(0,0,0,.55); padding: 3px; }
+.nophoto { height: 100%; display: flex; align-items: center; justify-content: center;
+  font: 800 2.6rem/1 "Barlow Condensed", system-ui, sans-serif; color: var(--rarity); }
+.lcard-name { font: 800 1.35rem/1.05 "Barlow Condensed", system-ui, sans-serif; text-align: center; }
+.lcard-meta { font-size: .72rem; color: var(--lc-muted); text-align: center; white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; }
+.lcard-stats { display: flex; justify-content: space-around; margin-top: 6px; text-align: center; }
+.lcard-stats b { display: block; font: 700 1rem/1.1 "Barlow Condensed", system-ui, sans-serif; }
+.lcard-stats small { font-size: .62rem; color: var(--lc-muted); }
+.lcard-rarity { margin: 6px -10px -10px; padding: 5px 0; text-align: center;
+  font: 700 .85rem/1 "Barlow Condensed", system-ui, sans-serif; letter-spacing: .04em;
+  background: color-mix(in srgb, var(--rarity) 22%, transparent); color: var(--rarity); }
+.lcard-rarity span { color: var(--lc-text); opacity: .85; }
+.badge-new { position: absolute; top: 44px; left: 10px; font: 700 .78rem/1 "Barlow Condensed", system-ui, sans-serif;
+  padding: 4px 10px; background: #52d68a; color: #052414; }
+.lcard.missing { filter: grayscale(1) brightness(.5); }
+.lcard.missing .lcard-photo img { opacity: .2; }
+.lcard-badges { display: flex; align-items: center; gap: 6px; }
+.lcard-flag .flag, .flag { display: inline-block; height: 14px; width: auto; box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+  vertical-align: middle; }
+.lcard-flag .flag { height: 16px; }
+
+/* ---------------------------------------------------------------------
+   Ouverture d'un booster : une scène dans le noir, un projecteur sur le
+   paquet. Il tremble, se déchire, les cartes sont distribuées face
+   cachée ; chaque carte se retourne dans un faisceau de sa rareté.
+   --------------------------------------------------------------------- */
+body.is-stage { background: radial-gradient(70% 55% at 50% 38%, color-mix(in srgb, var(--hextech, #3fd0e0) 9%, #0c1428), #04070f 80%) fixed; }
+.opening-stage { position: relative; min-height: 520px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; }
+.opening-hint { color: var(--lc-muted, #8d98b3); margin-top: 18px; min-height: 1.4em; text-align: center; }
+.reveal-all { color: var(--hextech, #3fd0e0); text-decoration: underline; }
+
+/* Le paquet */
+.pack { position: relative; width: 250px; height: 360px; cursor: pointer; border: 0; padding: 0; background: none;
+  filter: drop-shadow(0 30px 40px rgba(0,0,0,.7)) drop-shadow(0 0 60px color-mix(in srgb, var(--booster) 35%, transparent));
+  transform-origin: 50% 80%; animation: pack-float 3s ease-in-out infinite; color: #fff;
+  font-family: "Barlow Condensed", system-ui, sans-serif; }
+.pack:focus-visible { outline: 2px solid #fff; outline-offset: 8px; }
+.pack-body, .pack-top { position: absolute; left: 0; right: 0; overflow: hidden;
+  background: linear-gradient(165deg, color-mix(in srgb, var(--booster) 88%, #fff 12%), var(--booster) 42%, #050912 120%); }
+.pack-top { top: 0; height: 20%;
+  display: flex; align-items: center; justify-content: center; border-bottom: 2px dashed rgba(255,255,255,.6); }
+.pack-top span { font: 600 .95rem/1 "Barlow Condensed", system-ui, sans-serif; opacity: .85; }
+.pack-body { top: 20%; bottom: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; text-align: center; padding: 0 16px; }
+.pack-body::before { content: ""; position: absolute; inset: 0; opacity: .3;
+  background: repeating-linear-gradient(-55deg, rgba(255,255,255,.14) 0 2px, transparent 2px 14px); }
+.pack-body b { position: relative; font-size: 2rem; font-weight: 800; line-height: 1; }
+.pack-body span { position: relative; opacity: .85; font: 600 1.15rem/1 "Barlow Condensed", system-ui, sans-serif; }
+/* Le visuel importé : le haut du paquet et le corps se partagent l'image. */
+.pack.has-image .pack-top { background: var(--pack-image) center top / 250px 360px no-repeat, var(--booster); }
+.pack.has-image .pack-body { background: linear-gradient(to top, rgba(5, 9, 18, .9), rgba(5, 9, 18, 0) 55%),
+  var(--pack-image) center -72px / 250px 360px no-repeat, var(--booster); justify-content: flex-end; padding-bottom: 26px; }
+.pack.has-image .pack-body::before { display: none; }
+.pack-shine { position: absolute; inset: 0; pointer-events: none;
+  background: linear-gradient(115deg, transparent 35%, rgba(255,255,255,.35) 50%, transparent 65%);
+  background-size: 250% 100%; animation: pack-shine 2.6s linear infinite; }
+@keyframes pack-float { 0%,100% { transform: translateY(0) rotate(-1.5deg); } 50% { transform: translateY(-12px) rotate(1.5deg); } }
+@keyframes pack-shine { from { background-position: 120% 0; } to { background-position: -120% 0; } }
+.pack.shaking { animation: pack-shake .75s cubic-bezier(.36,.07,.19,.97) both; }
+@keyframes pack-shake {
+  0%,100% { transform: translate(0,0) rotate(0); }
+  10%,50%,90% { transform: translate(-7px,0) rotate(-5deg) scale(1.03); }
+  30%,70% { transform: translate(7px,0) rotate(5deg) scale(1.03); }
+}
+.pack.torn { animation: none; }
+.pack.torn .pack-top { animation: pack-tear .55s ease-in forwards; }
+.pack.torn .pack-body { animation: pack-drop .6s .3s ease-in forwards; }
+.pack.torn .pack-shine { display: none; }
+@keyframes pack-tear { to { transform: translate(160px,-200px) rotate(40deg); opacity: 0; } }
+@keyframes pack-drop { to { transform: translateY(80px) scale(.8); opacity: 0; } }
+
+.opening-flash { position: fixed; inset: 0; pointer-events: none; opacity: 0; z-index: 50;
+  background: radial-gradient(circle at 50% 45%, var(--flash, #fff) 0%, transparent 60%); }
+.opening-flash.on { animation: flash .8s ease-out; }
+@keyframes flash { 0% { opacity: 0; } 20% { opacity: .9; } 100% { opacity: 0; } }
+
+/* Les cartes distribuées */
+.deal { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 200px)); gap: 26px 20px;
+  justify-content: center; width: 100%; }
+.deal[hidden] { display: none; }
+.flip { perspective: 1100px; cursor: pointer; position: relative; opacity: 0;
+  transform: translateY(-140px) scale(.4) rotate(-14deg); }
+.deal.dealt .flip { animation: deal .55s cubic-bezier(.2,.9,.3,1.2) forwards; animation-delay: calc(var(--i) * 130ms); }
+@keyframes deal { to { opacity: 1; transform: none; } }
+.flip-inner { position: relative; aspect-ratio: 5 / 7.6; transition: transform .75s cubic-bezier(.3,1.4,.5,1);
+  transform-style: preserve-3d; }
+.flip.revealed .flip-inner { transform: rotateY(180deg); }
+.flip-back, .flip-front { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; }
+.flip-front { transform: rotateY(180deg); }
+.flip-front a { color: inherit; text-decoration: none; display: block; height: 100%; }
+.flip-back { display: grid; place-items: center;
+  clip-path: polygon(0 14px, 14px 0, 100% 0, 100% calc(100% - 14px), calc(100% - 14px) 100%, 0 100%);
+  background: repeating-linear-gradient(-55deg, rgba(255,255,255,.06) 0 2px, transparent 2px 12px),
+              linear-gradient(165deg, var(--booster, #3fd0e0), #070b16 110%); }
+.flip-back span { width: 46px; height: 54px; background: rgba(255,255,255,.55);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); }
+.flip:not(.revealed):hover .flip-inner { transform: translateY(-8px); }
+/* Avant d'être retournée, une carte épique ou mieux palpite à sa couleur. */
+.flip:not(.revealed)[data-rarity="2"] .flip-inner,
+.flip:not(.revealed)[data-rarity="3"] .flip-inner { filter: drop-shadow(0 0 14px var(--rarity-color)); animation: tease 1.3s ease-in-out infinite; }
+@keyframes tease { 50% { filter: drop-shadow(0 0 30px var(--rarity-color)); } }
+
+/* Le faisceau : un rai de lumière de la rareté, derrière la carte révélée. */
+.beam { position: absolute; left: 50%; top: -60%; width: 70%; height: 220%; transform: translateX(-50%) scaleY(0);
+  transform-origin: 50% 100%; pointer-events: none; z-index: -1; opacity: 0;
+  background: linear-gradient(to top, transparent, color-mix(in srgb, var(--rarity-color) 55%, transparent) 45%, transparent);
+  filter: blur(14px); }
+.flip.revealed[data-rarity="1"] .beam { animation: beam 1.2s ease-out forwards; --beam: .35; }
+.flip.revealed[data-rarity="2"] .beam { animation: beam 1.6s ease-out forwards; --beam: .7; }
+.flip.revealed[data-rarity="3"] .beam { animation: beam 2.2s ease-out forwards; --beam: 1; width: 110%; }
+@keyframes beam { 0% { opacity: 0; transform: translateX(-50%) scaleY(0); }
+  30% { opacity: var(--beam); transform: translateX(-50%) scaleY(1); } 100% { opacity: calc(var(--beam) * .45); transform: translateX(-50%) scaleY(1); } }
+.flip.revealed[data-rarity="2"] .lcard, .flip.revealed[data-rarity="3"] .lcard { animation: pop .55s ease-out 1; }
+@keyframes pop { 0% { transform: scale(1); } 40% { transform: scale(1.09); } 100% { transform: scale(1); } }
+
+.pull-note { margin: 10px 0 0; text-align: center; font: 600 .95rem/1.2 "Barlow Condensed", system-ui, sans-serif;
+  color: var(--lc-muted, #8d98b3); opacity: 0; transition: opacity .3s .5s; max-width: none; }
+.flip.revealed .pull-note { opacity: 1; }
+.pull-note .is-new { color: #52d68a; }
+.pull-note .is-fuse { color: var(--gold, #e2b35a); }
+
+.spark { position: absolute; width: 7px; height: 7px; pointer-events: none; transform: rotate(45deg);
+  background: var(--rarity-color, #f5b301); left: 50%; top: 42%; z-index: 5; animation: spark .9s ease-out forwards; }
+@keyframes spark { to { transform: translate(var(--dx), var(--dy)) rotate(45deg) scale(.2); opacity: 0; } }
+
+/* Bilan */
+.opening-summary { margin-top: 34px; text-align: center; opacity: 0; transform: translateY(10px);
+  transition: opacity .4s, transform .4s; }
+.opening-summary.shown { opacity: 1; transform: none; }
+.opening-summary h1 { font-size: clamp(1.6rem, 3vw, 2.4rem); }
+.opening-summary h1 .best { color: var(--rarity); }
+.opening-summary p { margin: 0 auto; }
+.actions { margin-top: 22px; display: flex; gap: 12px; align-items: center; justify-content: center; flex-wrap: wrap; }
+
+@media (prefers-reduced-motion: reduce) {
+  .pack, .pack-shine, .flip, .deal.dealt .flip, .flip-inner, .lcard, .lcard::after, .spark, .beam { animation: none !important; transition: none !important; }
+  .flip { opacity: 1; transform: none; }
+  .flip.revealed .beam { opacity: .3; transform: translateX(-50%) scaleY(1); }
+}

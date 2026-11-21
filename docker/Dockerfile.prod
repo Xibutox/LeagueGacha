@@ -1,0 +1,35 @@
+# syntax=docker/dockerfile:1
+#
+# Image de production (Raspberry Pi, arm64, ou tout serveur) : le code est
+# copié dans l'image, rien n'est monté. Servie par Daphne (HTTP + WebSockets
+# du framework), derrière Caddy (compose.prod.yaml).
+
+FROM python:3.13-slim
+
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    PYTHONPATH=/app:/app/django-generic \
+    DJANGO_SETTINGS_MODULE=config.settings.prod
+
+WORKDIR /app
+
+COPY django-generic/pyproject.toml django-generic/README.md django-generic/LICENSE ./django-generic/
+COPY django-generic/generic/ ./django-generic/generic/
+COPY django-generic/requirements/constraints.txt ./django-generic/requirements/constraints.txt
+ENV PIP_CONSTRAINT=/app/django-generic/requirements/constraints.txt
+
+COPY requirements.txt ./
+RUN pip install "./django-generic[export,events,tasks,postgres]" -r requirements.txt
+
+COPY . .
+
+# Un utilisateur sans droits ; les dossiers des volumes lui appartiennent.
+RUN useradd --system --uid 1000 --home /app app \
+    && mkdir -p /app/staticfiles /app/media /app/game_media \
+    && chown -R app:app /app/staticfiles /app/media /app/game_media
+USER app
+
+EXPOSE 8000
+CMD ["daphne", "--bind", "0.0.0.0", "--port", "8000", "--proxy-headers", "config.asgi:application"]

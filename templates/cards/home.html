@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block title %}Boosters — Wiki LoL Esport{% endblock %}
+{% block content %}
+<section class="lobby">
+  <div>
+    {% if user.is_authenticated %}
+      <h1>{% if unlimited %}Boosters illimités (compte staff){% elif ready %}{{ ready }} booster{{ ready|pluralize }} t'attend{{ ready|pluralize:"ent" }}{% else %}Tes boosters se rechargent{% endif %}</h1>
+      <p class="muted">Chaque booster se recharge à son rythme. Une réserve pleine ne grossit plus : ouvre avant de perdre les suivants.</p>
+      <div class="lobby-stats">
+        <div><b>{{ owned_count }}<small class="muted"> / {{ total_count }}</small></b><span>cartes collectionnées</span></div>
+        <div><b>{% if best_roster %}{{ best_roster.score|floatformat:1 }}{% else %}—{% endif %}</b><span>{% if best_roster %}ta meilleure équipe{% else %}pas encore d'équipe classée{% endif %}</span></div>
+      </div>
+    {% else %}
+      <h1>Collectionne les pros de LoL</h1>
+      <p class="muted">Ouvre des boosters, monte une équipe de 5 joueurs avec 5 champions chacun, et grimpe au classement.
+        La note d'un joueur vient de ses vraies parties en compétition.</p>
+      <p><a class="btn btn-gold btn-big" href="{% url 'signup' %}">Créer un compte</a></p>
+    {% endif %}
+  </div>
+  <div>
+    <h3>Raretés</h3>
+    <div class="rarity-row">
+      {% for r in rarities %}
+        <span class="rarity-chip" style="--rarity: {{ r.color }}"><b>{{ r.name }}</b>{{ r.drop_rate|floatformat:"-2" }} %{% if r.score_bonus %} · +{{ r.score_bonus|floatformat:"-1" }} % en équipe{% endif %}</span>
+      {% endfor %}
+    </div>
+    <p class="small muted">Chance par carte tirée. Deux exemplaires d'une rareté se fusionnent en un de la suivante.</p>
+  </div>
+</section>
+
+<div class="strap"><h2 id="boosters">Boosters</h2></div>
+<div class="shelf">
+  {% for booster in boosters %}
+    {% with s=booster.status %}
+    <article class="pack-tile{% if s and s.available or s and s.unlimited %} is-ready{% endif %}" style="--booster: {{ booster.color }}">
+      <div class="pack-art{% if booster.image %} has-image{% endif %}"{% if booster.image %} style="--pack-image: url('{{ booster.image.url }}')"{% endif %}>
+        <b>{{ booster.name }}</b>
+        <small>{{ booster.cards_per_pack }} cartes{% if booster.guaranteed_rarity %} · dernière {{ booster.guaranteed_rarity.name|lower }} ou mieux{% endif %}</small>
+      </div>
+      {% if s %}
+        <div class="pack-stock">
+          {% if s.unlimited %}
+            <b>∞</b><span>illimité (compte staff)</span>
+          {% else %}
+            <b class="{% if not s.available %}empty{% endif %}">{{ s.available }}<small class="muted"> / {{ s.max }}</small></b>
+            <span>{% if s.next_at %}+1 dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% else %}réserve pleine{% endif %}</span>
+          {% endif %}
+        </div>
+        {% if not s.unlimited %}<div class="meter" aria-hidden="true"><span style="width: {% widthratio s.available s.max 100 %}%"></span></div>{% endif %}
+        <form method="post" action="{% url 'cards:open_booster' booster.slug %}">{% csrf_token %}
+          <button class="btn {% if s.available or s.unlimited %}btn-gold{% else %}btn-ghost{% endif %}" type="submit" {% if not s.available and not s.unlimited %}disabled{% endif %}>Ouvrir</button>
+        </form>
+      {% else %}
+        <p class="small muted">{{ booster.description }}</p>
+      {% endif %}
+    </article>
+    {% endwith %}
+  {% empty %}
+    <p class="muted">Aucun booster pour l'instant : ils apparaissent dès qu'une première ligue est importée.
+      {% if user.is_staff %}<a href="{% url 'site:esport_split_importer-une-ligue' %}">Importer une ligue</a>{% endif %}</p>
+  {% endfor %}
+</div>
+
+{% if recent_openings %}
+<div class="strap"><h2>Tes dernières ouvertures</h2></div>
+<div class="history">
+  {% for o in recent_openings %}
+    <a href="{% url 'cards:opening' o.pk %}?anim=0"><span>{{ o.booster.name|default:"Booster supprimé" }}</span><span class="muted">{{ o.opened_at|date:"d/m H:i" }}</span></a>
+  {% endfor %}
+</div>
+{% endif %}
+{% endblock %}
