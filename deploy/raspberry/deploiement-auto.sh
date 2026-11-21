@@ -67,7 +67,7 @@ fi
 LAN_HOST="$(sed -n 's/^LAN_HOST=//p' .env.prod)"
 healthy() {
 	local code
-	for _ in $(seq 1 36); do
+	for _ in $(seq 1 72); do
 		code="$(curl -sk -o /dev/null -w '%{http_code}' "https://$LAN_HOST:8443/" || true)"
 		[ "$code" = "200" ] && return 0
 		sleep 5

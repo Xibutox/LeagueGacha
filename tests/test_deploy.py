@@ -22,7 +22,7 @@ def test_every_service_restarts_and_drops_privileges():
     services = compose()["services"]
     for name, service in services.items():
         assert service.get("security_opt") == ["no-new-privileges:true"], name
-        if name != "migrate":
+        if name not in {"migrate", "recalcul"}:
             assert service.get("restart") == "unless-stopped", name
 
 
@@ -56,7 +56,10 @@ def test_the_pi_waits_for_the_ci_job_it_names():
 def test_startup_creates_the_booster_types():
     migrate = compose()["services"]["migrate"]["command"]
     assert "migrate --noinput" in migrate and "init_boosters" in migrate
-    assert "recompute_cards --si-besoin" in migrate
+    assert "recompute_cards" not in migrate  # le site n'attend pas le recalcul
+    services = compose()["services"]
+    assert "recompute_cards --si-besoin" in services["recalcul"]["command"]
+    assert "recalcul" not in services["web"].get("depends_on", {})
 
 
 def test_the_server_scripts_are_executable_and_unix():
