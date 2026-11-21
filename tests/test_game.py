@@ -815,3 +815,12 @@ def test_the_pack_announces_its_best_rarity(client, booster, bob):
     assert f'data-best="{best.rarity.order}"' in html
     assert f"--best: {best.rarity.color}" in html
     assert 'class="pack-aura"' in html
+
+
+def test_default_drop_rates():
+    from cards.models import Rarity
+    from cards.services import ensure_default_rarities
+
+    ensure_default_rarities()
+    rates = {r.code: float(r.drop_rate) for r in Rarity.objects.all()}
+    assert rates == {"commune": 74, "rare": 20, "epique": 5, "legendaire": 1}

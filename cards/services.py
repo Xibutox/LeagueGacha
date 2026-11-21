@@ -45,10 +45,10 @@ logger = logging.getLogger(__name__)
 # Raretés par défaut :
 # (code, nom, ordre, couleur, taux de tirage %, bonus de score %, exemplaires pour fusionner)
 DEFAULT_RARITIES = [
-    ("commune", "Commune", 0, "#9aa4b1", 62, 0, 2),
-    ("rare", "Rare", 1, "#3b82f6", 27, 5, 2),
-    ("epique", "Épique", 2, "#a855f7", 9, 10, 2),
-    ("legendaire", "Légendaire", 3, "#f5b301", 2, 20, 0),
+    ("commune", "Commune", 0, "#9aa4b1", 74, 0, 2),
+    ("rare", "Rare", 1, "#3b82f6", 20, 5, 2),
+    ("epique", "Épique", 2, "#a855f7", 5, 10, 2),
+    ("legendaire", "Légendaire", 3, "#f5b301", 1, 20, 0),
 ]
 
 
