@@ -13,3 +13,4 @@ game_media/
 .env.prod
 backups/
 deploy/export/
+*.local.bat

@@ -1,6 +1,13 @@
 ﻿# Installe le Raspberry Pi depuis ce PC : ajoute ta clé SSH sur le Pi
 # (le mot de passe du Pi est demandé une dernière fois), y copie
 # install.sh et le lance. Lancé par installer-depuis-windows.bat.
+param(
+    [string]$Address = "",
+    [string]$User = "",
+    [string]$RepoUrl = "",
+    [string]$Domain = "",
+    [string]$Email = ""
+)
 $ErrorActionPreference = "Stop"
 $root = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 
@@ -12,11 +19,16 @@ foreach ($cmd in "ssh", "scp", "ssh-keygen") {
 
 Write-Host ""
 Write-Host "== Installation du Raspberry Pi" -ForegroundColor Cyan
-Write-Host "L'adresse IP du Pi se lit dans Freebox OS > Périphériques réseau."
-$address = Read-Host "Adresse du Raspberry (ex. 192.168.1.42)"
+$address = $Address
+if (-not $address) {
+    Write-Host "L'adresse IP du Pi se lit dans Freebox OS > Périphériques réseau."
+    $address = Read-Host "Adresse du Raspberry (ex. 192.168.1.42)"
+}
 if (-not $address) { throw "Adresse manquante." }
-$user = Read-Host "Utilisateur du Pi [pi]"
+$user = $User
+if (-not $user) { $user = Read-Host "Utilisateur du Pi [pi]" }
 if (-not $user) { $user = "pi" }
+Write-Host "Raspberry : $user@$address"
 $target = "$user@$address"
 
 # 1. Une clé SSH sur ce PC (créée une seule fois).
@@ -46,7 +58,12 @@ if ($LASTEXITCODE -ne 0) { throw "Copie de install.sh impossible." }
 
 Write-Host ""
 Write-Host "== Lancement de l'installation sur le Pi" -ForegroundColor Cyan
-ssh -t $target "bash ~/install.sh"
+# Les réponses déjà connues passent à install.sh, qui ne les redemande pas.
+$preset = @()
+if ($RepoUrl) { $preset += "REPO_URL='$RepoUrl'" }
+if ($Domain) { $preset += "SITE_DOMAIN='$Domain'" }
+if ($Email) { $preset += "ACME_EMAIL='$Email'" }
+ssh -t $target "$($preset -join ' ') bash ~/install.sh"
 if ($LASTEXITCODE -ne 0) { throw "L'installation s'est arrêtée : relis le message ci-dessus, puis relance ce script (il reprend où il en était)." }
 
 Write-Host ""
