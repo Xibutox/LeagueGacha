@@ -2,9 +2,12 @@
 
 
 def game(request):
+    from django.conf import settings
+
+    context = {"app_version": settings.APP_VERSION}
     user = getattr(request, "user", None)
     if not user or not user.is_authenticated or request.path.startswith("/gestion/"):
-        return {}
+        return context
 
     def ready():
         # Calculé seulement si le gabarit l'affiche.
@@ -17,4 +20,5 @@ def game(request):
             return "∞"
         return sum(s["available"] for s in status.values())
 
-    return {"packs_ready": ready}
+    context["packs_ready"] = ready
+    return context

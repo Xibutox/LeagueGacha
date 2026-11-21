@@ -775,3 +775,10 @@ def test_the_gestion_creates_the_booster_types(admin_client, split):
 def test_the_site_name_is_leaguegacha(client, split):
     page = client.get(reverse("cards:home")).content.decode()
     assert "League<b>Gacha</b>" in page and "Wiki LoL" not in page
+
+
+def test_the_footer_shows_the_deployed_version(client, split, settings):
+    settings.APP_VERSION = "v1.2.3"
+    assert "v1.2.3" in client.get(reverse("cards:home")).content.decode()
+    settings.APP_VERSION = ""
+    assert 'class="version"' not in client.get(reverse("cards:home")).content.decode()

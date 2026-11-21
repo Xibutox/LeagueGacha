@@ -310,6 +310,9 @@ GAME_RATING_PRIOR_GAMES = env_int("GAME_RATING_PRIOR_GAMES", 3)
 
 # -- Leaguepedia -------------------------------------------------------------
 
+#: La version déployée (un tag vX.Y.Z), affichée en bas du site.
+APP_VERSION = env("APP_VERSION", "")
+
 #: Après un import, compléter les nouveaux champions par Data Dragon (Riot).
 DDRAGON_AUTO_SYNC = env_bool("DDRAGON_AUTO_SYNC", True)
 

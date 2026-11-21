@@ -318,7 +318,10 @@ Le Pi va chercher les nouveautés lui-même : aucun port de plus à ouvrir,
 aucun secret dans GitHub. Sur un Pi installé avant cette procédure, une
 fois : `git pull && bash deploy/raspberry/activer-deploiement-auto.sh`.
 
-Suivre les déploiements : `journalctl -u leaguegacha-deploiement -f`.
+Vérifier où en est le Pi : `bash deploy/raspberry/statut.sh` (version
+déployée, dernier tag publié, prochain passage, conteneurs). La version
+s'affiche aussi en bas du site. Suivre les déploiements :
+`journalctl -u leaguegacha-deploiement -f`.
 
 ### Au quotidien, sur le Pi (`cd /opt/wiki-lol-esport`)
 

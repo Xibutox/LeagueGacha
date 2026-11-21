@@ -59,6 +59,7 @@ print((runs[0].get("conclusion") or runs[0].get("status")) if runs else "absent"
 			exit 0 ;;
 		*)
 			# En cours, pas encore lancés, ou GitHub injoignable : on réessaie au prochain passage.
+			log "$TAG : tests GitHub pas encore verts ($CONCLUSION), nouvel essai dans 5 minutes."
 			exit 0 ;;
 	esac
 fi
@@ -81,7 +82,8 @@ bash ./deploy/raspberry/sauvegarde.sh
 deploy_ref() {
 	git -c advice.detachedHead=false checkout --quiet --force "$1"
 	git submodule update --init --recursive --quiet
-	"${COMPOSE[@]}" up -d --build --remove-orphans
+	# La version affichée en bas du site.
+	APP_VERSION="$(git describe --tags --always)" "${COMPOSE[@]}" up -d --build --remove-orphans
 }
 
 if deploy_ref "$TAG" && healthy; then
