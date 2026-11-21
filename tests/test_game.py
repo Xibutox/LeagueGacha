@@ -747,6 +747,8 @@ def test_the_booster_types_split_ewc_and_riot_international(split):
     assert set(Booster.objects.get(slug="ewc-2026").leagues.all()) == {ewc}
     assert set(Booster.objects.get(slug="korea-2026").leagues.all()) == {lck}
     assert ensure_boosters() == []  # relançable
+    assert not Booster.objects.filter(guaranteed_rarity__isnull=True).exists()
+    assert {b.guaranteed_rarity.code for b in Booster.objects.all()} == {"rare"}
 
 
 def test_init_boosters_retires_the_old_international_booster(split):

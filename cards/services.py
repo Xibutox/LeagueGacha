@@ -144,8 +144,8 @@ def booster_family(league) -> tuple[str, str, str]:
 
 
 def ensure_boosters(deactivate_obsolete: bool = False) -> list[str]:
-    """Les boosters types : « Tous les splits » (dernière carte au moins
-    rare), puis un booster par année et par famille de ligues
+    """Les boosters types, tous avec la dernière carte au moins rare :
+    « Tous les splits », puis un booster par année et par famille de ligues
     (booster_family) : chaque région, l'Esports World Cup, et Riot
     International (First Stand, MSI, Worlds).
 
@@ -188,8 +188,12 @@ def ensure_boosters(deactivate_obsolete: bool = False) -> list[str]:
         international = key in {"ewc", "riot-international"} or key == "International"
         defaults = {
             "name": name,
-            "description": f"Les joueurs de {', '.join(sorted(l.short_name or l.name for l in group['leagues']))} en {year}.",
+            "description": (
+                f"Les joueurs de {', '.join(sorted(l.short_name or l.name for l in group['leagues']))} en {year}. "
+                "Dernière carte au moins rare."
+            ),
             "years": str(year),
+            "guaranteed_rarity": rare,
             "auto": True,
             "order": 100 - (year % 100) + (5 if international else 0),
             "color": group["color"],
