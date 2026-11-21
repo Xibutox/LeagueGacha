@@ -130,7 +130,6 @@ CONF
 sudo systemctl enable --now docker >/dev/null
 sudo systemctl restart docker
 sudo usermod -aG docker "$USER"
-DOCKER=(sudo docker)
 
 # ------------------------------------------------------------ SSH
 bold "SSH : clé seulement, réseau local seulement"
@@ -253,8 +252,8 @@ else
 fi
 
 bold "Construction et démarrage (la première fois : 10 à 20 minutes sur un Pi)"
-"${DOCKER[@]}" "${COMPOSE[@]}" up -d --build
-"${DOCKER[@]}" "${COMPOSE[@]}" ps
+sudo "${COMPOSE[@]}" up -d --build
+sudo "${COMPOSE[@]}" ps
 
 # ------------------------------------------------------------ Sauvegardes
 bold "Sauvegarde de la base chaque nuit"
