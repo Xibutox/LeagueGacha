@@ -278,8 +278,8 @@ SPLIT_STRETCH = 2.5
 
 #: La version du calcul des notes. À augmenter quand il change : au
 #: démarrage suivant, tout est recalculé (recompute_cards --si-besoin).
-#: 2 : prestige des ligues.
-SCORING_VERSION = 2
+#: 2 : prestige des ligues. 3 : prestige plus marqué, internationaux sans correction.
+SCORING_VERSION = 3
 
 
 def split_rating(game_scores: list[float], prior_games: int = PRIOR_GAMES, prior_mean: float = 50.0) -> float:

@@ -295,23 +295,38 @@ class PrestigeTests(unittest.TestCase):
         from esport.prestige import default_prestige
 
         self.assertGreater(default_prestige("LCK"), default_prestige("LEC"))
-        self.assertGreater(default_prestige("LEC"), default_prestige("LFL"))
-        self.assertGreater(default_prestige("MSI", "International"), default_prestige("LCK"))
-        self.assertEqual(default_prestige("XYZ", "International"), 1.06)
-        self.assertEqual(default_prestige("XYZ", "Korea", "Secondary"), 0.88)
+        self.assertGreater(default_prestige("LEC"), default_prestige("LCS"))
+        self.assertGreater(default_prestige("LCS"), default_prestige("LFL"))
+        self.assertLessEqual(default_prestige("LFL"), 0.75)
+        self.assertEqual(default_prestige("XYZ", "Korea", "Secondary"), 0.70)
+
+    def test_international_competitions_are_not_corrected(self):
+        from esport.prestige import default_prestige
+
+        for short in ("MSI", "WCS", "FST", "EWC"):
+            self.assertEqual(default_prestige(short, "International"), 1.0)
+        self.assertEqual(default_prestige("XYZ", "International"), 1.0)
 
     def test_a_league_can_override_its_prestige(self):
         from decimal import Decimal
         from types import SimpleNamespace
 
-        from esport.prestige import apply_prestige, league_prestige
+        from esport.prestige import league_prestige
 
         league = SimpleNamespace(short_name="LFL", region="EMEA", level="Secondary", prestige=None)
-        self.assertEqual(league_prestige(league), 0.92)
+        self.assertEqual(league_prestige(league), 0.72)
         league.prestige = Decimal("0.80")
         self.assertEqual(league_prestige(league), 0.80)
-        self.assertEqual(apply_prestige(95, 1.1), 100.0)
-        self.assertEqual(apply_prestige(60, 0.9), 54.0)
+
+    def test_the_correction_multiplies_the_final_rating(self):
+        from esport.prestige import apply_prestige, prestige_prior
+
+        games = [72, 65, 70, 58, 80]
+        raw = scoring.split_rating(games, prior_games=0)
+        corrected = scoring.split_rating([apply_prestige(g, 0.72) for g in games], prior_games=0)
+        self.assertAlmostEqual(corrected, raw * 0.72, delta=0.3)
+        self.assertAlmostEqual(scoring.split_rating([], prior_mean=prestige_prior(0.72)), 36, delta=0.1)
+        self.assertEqual(apply_prestige(80, 1.0), 80)
 
     def test_the_split_prior_is_the_league_average(self):
         self.assertLess(scoring.split_rating([], prior_mean=46), scoring.split_rating([], prior_mean=50))

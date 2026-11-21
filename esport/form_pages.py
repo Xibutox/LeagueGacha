@@ -16,7 +16,7 @@ from generic.api import FormSerializer
 from generic.sites import ResourceFormPageView
 
 from .models import League
-from .tasks import import_league, regroup_splits_operation, sync_champions_operation, sync_leagues
+from .tasks import import_everything, import_league, regroup_splits_operation, sync_champions_operation, sync_leagues
 
 #: Les ligues internationales de Leaguepedia ajoutées par la case à cocher.
 INTERNATIONAL_REGION = "International"
@@ -229,6 +229,45 @@ class RegroupSplitsPage(ResourceFormPageView):
 
     def get_success_message(self, result: Any) -> str:
         return str(_("Regroupement terminé."))
+
+    def get_success_url(self, result: Any) -> str:
+        return result.get_absolute_url()
+
+
+class ImportEverythingForm(FormSerializer):
+    images = serializers.BooleanField(
+        label=_("Télécharger les photos et les logos"), default=True, required=False
+    )
+    refresh = serializers.BooleanField(
+        label=_("Réimporter aussi les splits déjà à jour"),
+        default=False,
+        required=False,
+        help_text=_("Sans cette case, seuls les splits nouveaux ou en cours sont importés."),
+    )
+
+
+class ImportEverythingPage(ResourceFormPageView):
+    serializer_class = ImportEverythingForm
+    description = _(
+        "Importe toutes les années disponibles sur Leaguepedia de la LEC, la "
+        "LCK, la LPL et la LCS (avec leurs anciens noms EU LCS et NA LCS), des "
+        "First Stand, MSI et Worlds, et de l'Esports World Cup, puis génère "
+        "les cartes et les boosters. La première fois, compte plusieurs "
+        "heures ; ensuite, relance-le pour récupérer les nouveautés : les "
+        "splits terminés et déjà importés sont sautés. En ligne de commande : "
+        "python manage.py import_tout."
+    )
+    icon = "cloud_sync"
+    submit_label = _("Tout importer")
+
+    def form_valid(self, serializer: Any) -> Any:
+        values = serializer.validated_data
+        return import_everything.start(
+            self.request, background=True, images=values.get("images", True), refresh=bool(values.get("refresh"))
+        )
+
+    def get_success_message(self, result: Any) -> str:
+        return str(_("Import lancé : le rapport s'affichera sur cette page."))
 
     def get_success_url(self, result: Any) -> str:
         return result.get_absolute_url()

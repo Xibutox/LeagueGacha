@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load static %}
 {% block title %}Boosters — LeagueGacha{% endblock %}
 {% block content %}
 {% for gift in gifts %}
@@ -42,7 +43,21 @@
   {% for booster in boosters %}
     {% with s=booster.status %}
     <article class="pack-tile{% if s and s.available or s and s.unlimited %} is-ready{% endif %}" style="--booster: {{ booster.color }}">
-      <div class="pack-art{% if booster.image %} has-image{% endif %}"{% if booster.image %} style="--pack-image: url('{{ booster.image.url }}')"{% endif %}>
+      <div class="pack-art{% if booster.image %} has-image{% elif booster.showcase %} has-showcase{% endif %}"{% if booster.image %} style="--pack-image: url('{{ booster.image.url }}')"{% endif %}>
+        {% if booster.showcase %}
+        <div class="showcase" data-showcase aria-label="Quelques joueurs de ce booster">
+          {% for item in booster.showcase %}
+            <figure class="showcase-card{% if forloop.first %} is-shown{% endif %}" style="--rarity: {{ item.rarity.color }}">
+              <div class="showcase-photo">
+                {% if item.card.image_url %}<img src="{{ item.card.image_url }}" alt="" loading="lazy">{% else %}<span class="nophoto">{{ item.card.player.ign|slice:":2" }}</span>{% endif %}
+                <span class="showcase-ovr">{{ item.card.overall }}</span>
+                <span class="showcase-rate" title="Chance de tirer ce joueur en {{ item.rarity.name|lower }}, par carte">{{ item.rate }}</span>
+              </div>
+              <figcaption><b>{{ item.card.player.ign }}</b><span>{{ item.rarity.name }} · {{ item.card.split.name }}</span></figcaption>
+            </figure>
+          {% endfor %}
+        </div>
+        {% endif %}
         <b>{{ booster.name }}</b>
         <small>{{ booster.cards_per_pack }} cartes{% if booster.guaranteed_rarity %} · dernière {{ booster.guaranteed_rarity.name|lower }} ou mieux{% endif %}</small>
       </div>
@@ -79,3 +94,4 @@
 </div>
 {% endif %}
 {% endblock %}
+{% block scripts %}<script src="{% static 'js/showcase.js' %}?v=10" defer></script>{% endblock %}

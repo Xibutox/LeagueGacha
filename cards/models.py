@@ -151,10 +151,18 @@ class Booster(models.Model):
         related_name="boosters",
         help_text="Vide = tous les splits.",
     )
+    qualified_teams_only = models.BooleanField(
+        "équipes qualifiées à l'international seulement",
+        default=False,
+        help_text=(
+            "Seulement les joueurs des équipes qui ont joué un First Stand, un MSI ou des "
+            "Worlds la même année."
+        ),
+    )
     auto = models.BooleanField(
         "créé automatiquement",
         default=False,
-        help_text="Booster région × année créé par l'import.",
+        help_text="Booster type créé par l'import (init_boosters).",
     )
     cards_per_pack = models.PositiveSmallIntegerField("cartes par booster", default=5)
     guaranteed_rarity = models.ForeignKey(
@@ -224,7 +232,24 @@ class Booster(models.Model):
                 qs = qs.filter(split__league__in=self.leagues.all())
             if self.splits.exists():
                 qs = qs.filter(split__in=self.splits.all())
+        if self.qualified_teams_only:
+            qs = qs.filter(qualified_for_international())
         return qs
+
+
+def qualified_for_international():
+    """Filtre de cartes : l'équipe de la carte a joué un First Stand, un MSI
+    ou des Worlds la même année."""
+    from esport.catalog import riot_events_q
+    from esport.models import GameAppearance
+
+    return models.Exists(
+        GameAppearance.objects.filter(
+            team_id=models.OuterRef("team_id"),
+            tournament__split__year=models.OuterRef("split__year"),
+            tournament__league__in=League.objects.filter(riot_events_q()),
+        )
+    )
 
 
 class BoosterRarityWeight(models.Model):

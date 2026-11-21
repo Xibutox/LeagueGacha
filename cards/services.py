@@ -4,17 +4,18 @@ from __future__ import annotations
 
 import itertools
 import logging
+import random
 from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
-from django.db.models import F
+from django.db.models import F, Sum
 from django.utils import timezone
 from django.utils.text import slugify
 
 from esport.champions import champion_key
-from esport.models import Champion, GameAppearance, PlayerImage, PlayerSplitStats, Split
+from esport.models import Champion, GameAppearance, League, PlayerImage, PlayerSplitStats, Split
 from esport.scoring import (
     champion_rating,
     composition_coherence,
@@ -143,76 +144,130 @@ def booster_family(league) -> tuple[str, str, str]:
     return region, label, REGION_COLORS.get(region, DEFAULT_BOOSTER_COLOR)
 
 
+BASE_BOOSTER_SLUG = "base"
+EWC_BOOSTER_SLUG = "ewc"
+
+
 def ensure_boosters(deactivate_obsolete: bool = False) -> list[str]:
     """Les boosters types, tous avec la dernière carte au moins rare :
-    « Tous les splits », puis un booster par année et par famille de ligues
-    (booster_family) : chaque région, l'Esports World Cup, et Riot
-    International (First Stand, MSI, Worlds).
 
-    Ne touche pas aux réglages des boosters existants (rythme, visuel,
-    taux) ; ajoute seulement les nouvelles ligues à leur famille.
-    deactivate_obsolete=True désactive les boosters automatiques qu'aucune
-    famille ne produit plus (anciens découpages). Renvoie les noms des
-    boosters créés."""
+    - le booster de base (actif) : les joueurs LEC, LCK, LPL et LCS de
+      toutes les années, seulement ceux des équipes qualifiées à un First
+      Stand, un MSI ou des Worlds la même année ;
+    - l'Esports World Cup, toutes années confondues (inactif) ;
+    - un booster par région et par année, et Riot International par année
+      (inactifs : à activer dans la gestion si on en veut).
+
+    Ne touche pas aux réglages des boosters existants (actif ou non, rythme,
+    visuel, taux) ; ajoute seulement les nouvelles ligues. deactivate_obsolete
+    désactive les boosters automatiques qu'aucune famille ne produit plus
+    (anciens découpages). Renvoie les noms des boosters créés."""
+    from esport.catalog import ewc_q, major_leagues_q
+
     ensure_default_rarities()
     created = []
     rare = Rarity.objects.filter(code="rare").first()
+    playable = Split.objects.filter(is_playable=True)
+    wanted = {BASE_BOOSTER_SLUG, EWC_BOOSTER_SLUG}
 
-    everything, was_created = Booster.objects.get_or_create(
-        slug="tous-les-splits",
-        defaults={
-            "name": "Tous les splits",
-            "description": "Toutes les cartes jouables. Dernière carte au moins rare.",
-            "guaranteed_rarity": rare,
-            "order": 0,
-            "color": "#3fb6c9",
-        },
-    )
-    if was_created:
-        created.append("Tous les splits")
-    elif everything.color == DEFAULT_BOOSTER_COLOR:
-        everything.color = "#3fb6c9"
-        everything.save(update_fields=["color"])
+    def ensure(slug, leagues, defaults):
+        if not leagues:
+            return
+        booster, was_created = Booster.objects.get_or_create(
+            slug=slug, defaults={"guaranteed_rarity": rare, "auto": True, **defaults}
+        )
+        booster.leagues.add(*leagues)
+        if was_created:
+            created.append(booster.name)
+        return booster
+
+    majors = list(League.objects.filter(major_leagues_q(), splits__in=playable).distinct())
+    ensure(BASE_BOOSTER_SLUG, majors, {
+        "name": "Booster de base",
+        "description": (
+            "Les joueurs LEC, LCK, LPL et LCS de toutes les années, des équipes qualifiées "
+            "à un First Stand, un MSI ou des Worlds. Dernière carte au moins rare."
+        ),
+        "qualified_teams_only": True,
+        "order": 0,
+        "color": "#3fb6c9",
+    })
+    ewc = list(League.objects.filter(ewc_q(), splits__in=playable).distinct())
+    ensure(EWC_BOOSTER_SLUG, ewc, {
+        "name": "Esports World Cup",
+        "description": "Les joueurs de l'Esports World Cup, toutes années confondues. Dernière carte au moins rare.",
+        "is_active": False,
+        "order": 1,
+        "color": "#0f8f6f",
+        "cooldown_hours": INTERNATIONAL_COOLDOWN_HOURS,
+        "max_stock": INTERNATIONAL_MAX_STOCK,
+        "starting_stock": 1,
+    })
 
     groups: dict[tuple[str, int], dict] = {}
-    for split in Split.objects.filter(is_playable=True).select_related("league"):
+    for split in playable.select_related("league"):
         key, label, color = booster_family(split.league)
+        if key == "ewc":
+            continue
         group = groups.setdefault((key, split.year), {"label": label, "color": color, "leagues": set()})
         group["leagues"].add(split.league)
 
-    wanted = set()
     for (key, year), group in sorted(groups.items(), key=lambda g: (-g[0][1], g[0][0])):
-        name = f"{group['label']} {year}"
         slug = slugify(f"{key}-{year}")[:100]
         wanted.add(slug)
-        international = key in {"ewc", "riot-international"} or key == "International"
+        international = key in {"riot-international", "International"}
         defaults = {
-            "name": name,
+            "name": f"{group['label']} {year}",
             "description": (
                 f"Les joueurs de {', '.join(sorted(l.short_name or l.name for l in group['leagues']))} en {year}. "
                 "Dernière carte au moins rare."
             ),
             "years": str(year),
-            "guaranteed_rarity": rare,
-            "auto": True,
+            "is_active": False,
             "order": 100 - (year % 100) + (5 if international else 0),
             "color": group["color"],
         }
         if international:
             defaults.update(cooldown_hours=INTERNATIONAL_COOLDOWN_HOURS, max_stock=INTERNATIONAL_MAX_STOCK,
                             starting_stock=1)
-        booster, was_created = Booster.objects.get_or_create(slug=slug, defaults=defaults)
-        # Une ligue de la famille importée plus tard rejoint le booster.
-        booster.leagues.add(*group["leagues"])
-        if booster.auto and booster.color == DEFAULT_BOOSTER_COLOR and group["color"] != DEFAULT_BOOSTER_COLOR:
-            booster.color = group["color"]
-            booster.save(update_fields=["color"])
-        if was_created:
-            created.append(name)
+        ensure(slug, list(group["leagues"]), defaults)
 
     if deactivate_obsolete:
         Booster.objects.filter(auto=True, is_active=True).exclude(slug__in=wanted).update(is_active=False)
     return created
+
+
+#: Joueurs montrés en vitrine sur un booster sans visuel.
+SHOWCASE_SIZE = 6
+
+
+def format_rate(percent: float) -> str:
+    """Un petit pourcentage lisible : 2 chiffres significatifs, virgule."""
+    if percent <= 0:
+        return "0 %"
+    text = f"{percent:.2g}" if percent < 1 else f"{percent:.1f}".rstrip("0").rstrip(".")
+    if "e" in text:
+        text = f"{percent:.6f}".rstrip("0")
+    return f"{text.replace('.', ',')} %"
+
+
+def booster_showcase(booster: Booster, size: int = SHOWCASE_SIZE, rng=None) -> list[dict]:
+    """Quelques joueurs tirés au hasard dans le contenu du booster, à montrer
+    en légendaire, avec la chance de tirer ce joueur en légendaire sur une
+    carte : [{"card", "rarity", "rate"}]."""
+    rng = rng or random
+    ids = list(booster.card_pool().values_list("pk", flat=True))
+    top = Rarity.objects.order_by("-order").first()
+    if not ids or top is None:
+        return []
+    rules = rarity_rules(booster)
+    total = sum(r.weight for r in rules) or 1
+    top_share = next((r.weight for r in rules if r.key == top.pk), 0) / total
+    rate = format_rate(100 * top_share / len(ids))
+    chosen = rng.sample(ids, min(size, len(ids)))
+    cards = Card.objects.filter(pk__in=chosen).select_related("player", "team", "image", "split")
+    order = {pk: i for i, pk in enumerate(chosen)}
+    return [{"card": c, "rarity": top, "rate": rate} for c in sorted(cards, key=lambda c: order[c.pk])]
 
 
 def rarity_rules(booster: Booster | None = None) -> list[draw.RarityRule]:
@@ -536,6 +591,35 @@ def give_boosters(users, booster: Booster, quantity: int, given_by=None, message
             )
             count += 1
     return count
+
+
+def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
+    """Remet des joueurs du site à zéro : collection, ouvertures, équipes et
+    réserves de boosters (ils retrouvent le stock de départ à leur prochaine
+    visite). keep_gifts garde les boosters offerts encore à ouvrir.
+    Renvoie le nombre de lignes supprimées par catégorie."""
+    from .models import PackOpening, Roster
+
+    users = list(users)
+    counts = {
+        "players": len(users),
+        "copies": UserCard.objects.filter(user__in=users).aggregate(n=Sum("quantity"))["n"] or 0,
+    }
+    with transaction.atomic():
+        UserCard.objects.filter(user__in=users).delete()
+        counts["openings"] = PackOpening.objects.filter(user__in=users).delete()[1].get("cards.PackOpening", 0)
+        counts["rosters"] = Roster.objects.filter(user__in=users).delete()[1].get("cards.Roster", 0)
+        stocks = BoosterStock.objects.filter(user__in=users)
+        if keep_gifts:
+            stocks.filter(bonus=0).delete()
+            for stock in stocks.select_related("booster"):
+                stock.stock = min(stock.booster.starting_stock, stock.booster.max_stock)
+                stock.refilled_at = timezone.now()
+                stock.save(update_fields=["stock", "refilled_at"])
+        else:
+            stocks.delete()
+            BoosterGift.objects.filter(user__in=users).delete()
+    return counts
 
 
 def unseen_gifts(user) -> list:

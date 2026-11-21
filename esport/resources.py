@@ -31,7 +31,7 @@ from .models import (
     Team,
     Tournament,
 )
-from .form_pages import ImportLeaguePage, RegroupSplitsPage, SyncChampionsPage, SyncLeaguesPage
+from .form_pages import ImportEverythingPage, ImportLeaguePage, RegroupSplitsPage, SyncChampionsPage, SyncLeaguesPage
 from .tasks import download_images, import_league, import_splits, recompute_splits
 
 GROUP = _("Données Leaguepedia")
@@ -249,6 +249,14 @@ class SplitResource(ModelResource):
             view=ImportLeaguePage,
             title=_("Importer une ligue"),
             icon="travel_explore",
+            permission="add",
+            navigation=True,
+        ),
+        ResourcePage(
+            "tout-importer",
+            view=ImportEverythingPage,
+            title=_("Importer tout le jeu"),
+            icon="cloud_sync",
             permission="add",
             navigation=True,
         ),

@@ -23,7 +23,7 @@ from generic.sites import (
     register,
 )
 
-from .form_pages import GiveBoostersPage, InitBoostersPage
+from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     Booster,
     BoosterGift,
@@ -452,6 +452,16 @@ class UserCardResource(ModelResource):
     )
     search_fields = ("user__username", "card__player__ign")
     tag_fields = {"rarity": RARITY_TAG}
+    pages = (
+        ResourcePage(
+            "reinitialiser",
+            view=ResetProgressPage,
+            title=_("Réinitialiser des joueurs"),
+            icon="restart_alt",
+            permission="delete",
+            navigation=True,
+        ),
+    )
     ordering = ("-last_obtained_at",)
     list_select_related = ("user", "card__player", "card__split", "rarity")
     fields = (("user", "card"), ("rarity", "quantity"))

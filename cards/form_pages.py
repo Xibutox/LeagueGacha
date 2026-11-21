@@ -10,7 +10,7 @@ from generic.api import FormSerializer
 from generic.sites import ResourceFormPageView
 
 from .models import Booster
-from .services import MAX_GIFT, GameError, ensure_boosters, ensure_default_rarities, give_boosters
+from .services import MAX_GIFT, GameError, ensure_boosters, ensure_default_rarities, give_boosters, reset_progress
 
 
 class GiveBoostersForm(FormSerializer):
@@ -105,3 +105,45 @@ class InitBoostersPage(ResourceFormPageView):
         if not created:
             return str(_("Tous les boosters types existent déjà."))
         return str(_("Créés : %(names)s.") % {"names": ", ".join(created)})
+
+
+class ResetProgressForm(FormSerializer):
+    users = serializers.PrimaryKeyRelatedField(
+        label=_("Joueurs"),
+        many=True,
+        queryset=get_user_model().objects.all(),
+        help_text=_("Un ou plusieurs joueurs du site (tape leur nom)."),
+    )
+    keep_gifts = serializers.BooleanField(
+        label=_("Garder les boosters offerts encore à ouvrir"), default=False, required=False
+    )
+    confirm = serializers.BooleanField(
+        label=_("Je confirme : leur collection, leurs ouvertures et leurs équipes seront supprimées"),
+        default=False,
+        required=False,
+    )
+
+    def validate(self, data):
+        if not data.get("confirm"):
+            raise serializers.ValidationError({"confirm": _("Coche la case pour confirmer : c'est irréversible.")})
+        return data
+
+
+class ResetProgressPage(ResourceFormPageView):
+    serializer_class = ResetProgressForm
+    description = _(
+        "Remet des joueurs du site à zéro : toutes leurs cartes, l'historique "
+        "de leurs ouvertures, leurs équipes et leurs réserves de boosters. Ils "
+        "repartent avec le stock de départ de chaque booster, comme un "
+        "nouveau joueur. Leur compte est gardé. Irréversible (hors sauvegarde)."
+    )
+    icon = "restart_alt"
+    submit_label = _("Réinitialiser")
+
+    def form_valid(self, serializer: Any) -> Any:
+        values = serializer.validated_data
+        counts = reset_progress(values["users"], keep_gifts=bool(values.get("keep_gifts")))
+        return str(_(
+            "%(players)s joueur(s) remis à zéro : %(copies)s exemplaire(s), %(openings)s ouverture(s) "
+            "et %(rosters)s équipe(s) supprimés."
+        ) % counts)

@@ -195,7 +195,22 @@ def import_league(
 ) -> str:
     importer = LeaguepediaImporter()
     label = f"Tournois : {', '.join(leagues)} — {', '.join(str(y) for y in years)}"
+    return _import_tournaments(run, importer, label, leagues, years, name_like, include_qualifiers, images)
 
+
+def _import_tournaments(
+    run: Any,
+    importer: LeaguepediaImporter,
+    label: str,
+    leagues: list[str],
+    years: list[int] | None,
+    name_like: str = "",
+    include_qualifiers: bool = False,
+    images: bool = True,
+    skip_finished: bool = False,
+) -> str:
+    """Trouve les tournois, crée les splits, puis importe ceux-ci.
+    skip_finished : ne réimporte pas un split terminé avant son dernier import."""
     with run.report.section(label) as section:
         importer.log = _section_logger(section)
         rows = importer.discover(leagues, years, name_like or None)
@@ -220,10 +235,52 @@ def import_league(
     split_ids = sorted(
         {t.split_id for t in tournaments if t.split_id is not None}
     )
+    skipped = 0
+    if skip_finished:
+        done = [
+            s.pk for s in Split.objects.filter(pk__in=split_ids, last_imported_at__isnull=False, end_date__isnull=False)
+            if s.last_imported_at.date() > s.end_date
+        ]
+        skipped = len(done)
+        split_ids = [pk for pk in split_ids if pk not in done]
     run.note(f"{len(split_ids)} split(s) à importer")
     _import_splits(run, split_ids, images)
 
-    return f"{len(tournaments)} tournoi(s), {len(split_ids)} split(s) importé(s)."
+    message = f"{len(tournaments)} tournoi(s), {len(split_ids)} split(s) importé(s)."
+    if skipped:
+        message += f" {skipped} split(s) déjà à jour, sautés."
+    return message
+
+
+@operation(
+    name="esport.import_everything",
+    label=_("Importer tout le jeu"),
+    description=_(
+        "Toutes les années disponibles sur Leaguepedia de la LEC, la LCK, "
+        "la LPL, la LCS (et leurs anciens noms), des First Stand, MSI, Worlds "
+        "et de l'Esports World Cup. Les splits terminés et déjà importés sont "
+        "sautés : on peut le relancer pour récupérer les nouveautés."
+    ),
+    icon="cloud_sync",
+    background=True,
+)
+def import_everything(run: Any, images: bool = True, refresh: bool = False) -> str:
+    from .catalog import FULL_IMPORT, full_import_q
+    from .models import League
+
+    importer = LeaguepediaImporter()
+    with run.report.section("Ligues") as section:
+        importer.log = _section_logger(section)
+        created, updated = importer.sync_leagues(list(FULL_IMPORT))
+        section.info(f"{created} ligue(s) ajoutée(s), {updated} mise(s) à jour.")
+        leagues = sorted(League.objects.filter(full_import_q()).values_list("name", flat=True))
+        if not leagues:
+            section.error("Aucune de ces ligues trouvée sur Leaguepedia.")
+            return "Aucune ligue trouvée."
+        section.info(", ".join(leagues))
+    return _import_tournaments(
+        run, importer, "Tournois : toutes les années", leagues, None, images=images, skip_finished=not refresh
+    )
 
 
 

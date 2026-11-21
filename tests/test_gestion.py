@@ -123,10 +123,10 @@ def test_importing_leagues_creates_splits_cards_and_region_boosters(
     assert run.status == run.Status.SUCCESS, run.error
     split = Split.objects.get()
     assert split.cards.count() == 10
-    region = Booster.objects.get(auto=True)
-    assert region.name == "EMEA 2025"
+    region = Booster.objects.get(slug="emea-2025")
+    assert region.name == "EMEA 2025" and not region.is_active
     assert region.card_pool().count() == 10
-    assert Booster.objects.filter(name="Tous les splits").exists()
+    assert Booster.objects.get(slug="base").is_active
 
 
 def test_syncing_leagues_fills_the_league_list(admin_user, monkeypatch):
@@ -316,3 +316,27 @@ def test_scores_are_recomputed_once_when_the_rating_changes(split, settings, tmp
     PlayerSplitStats.objects.update(score=0)
     call_command("recompute_cards", "--si-besoin")  # déjà à jour : rien
     assert not PlayerSplitStats.objects.exclude(score=0).exists()
+
+
+def test_importing_everything_skips_finished_splits(admin_user, monkeypatch):
+    from esport import tasks
+    from esport.importer import LeaguepediaImporter
+    from tests.test_importer import FakeClient
+
+    client = FakeClient()
+    monkeypatch.setattr(tasks, "LeaguepediaImporter", lambda: LeaguepediaImporter(client=client))
+
+    run = tasks.import_everything.start(admin_user, background=False, images=False)
+    assert run.status == run.Status.SUCCESS, run.error
+    split = Split.objects.get()
+    assert split.cards.count() == 10 and split.last_imported_at
+
+    before = sum(1 for c in client.calls if c.startswith("ScoreboardPlayers"))
+    run = tasks.import_everything.start(admin_user, background=False, images=False)
+    assert run.status == run.Status.SUCCESS, run.error
+    assert "déjà à jour" in run.summary
+    assert sum(1 for c in client.calls if c.startswith("ScoreboardPlayers")) == before
+
+
+def test_the_import_everything_page_opens(admin_client):
+    assert admin_client.get(reverse("site:esport_split_tout-importer")).status_code == 200

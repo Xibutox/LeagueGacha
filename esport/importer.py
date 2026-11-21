@@ -22,7 +22,7 @@ from django.utils.text import slugify
 
 from . import scoring
 from .leaguepedia import LeaguepediaClient, LeaguepediaError, chunked, in_clause, quote
-from .prestige import apply_prestige, league_prestige
+from .prestige import apply_prestige, league_prestige, prestige_prior
 from .models import (
     GameAppearance,
     League,
@@ -102,9 +102,12 @@ class LeaguepediaImporter:
         return created, updated
 
     # ================================================================ Tournois
-    def discover(self, leagues: list[str], years: list[int], name_like: str | None = None) -> list[dict]:
-        """Les tournois de plusieurs ligues (noms complets) et années."""
-        where = [in_clause("T.League", leagues), in_clause("T.Year", [str(y) for y in years])]
+    def discover(self, leagues: list[str], years: list[int] | None, name_like: str | None = None) -> list[dict]:
+        """Les tournois de plusieurs ligues (noms complets) et années (None :
+        toutes les années)."""
+        where = [in_clause("T.League", leagues)]
+        if years:
+            where.append(in_clause("T.Year", [str(y) for y in years]))
         if name_like:
             where.append(f"T.Name LIKE {quote('%' + name_like + '%')}")
         return self.client.cargo(
@@ -488,7 +491,7 @@ class LeaguepediaImporter:
         appearances = list(
             GameAppearance.objects.filter(tournament__split=split).select_related("tournament__league").order_by("played_at")
         )
-        # Le prestige de la ligue : chaque partie compte plus en LCK qu'en ligue régionale.
+        # Le prestige de la ligue : la même partie vaut moins en ligue régionale qu'en LCK.
         split_prestige = league_prestige(split.league)
         by_player: dict[int, list[dict]] = defaultdict(list)
         for a in appearances:
@@ -504,7 +507,7 @@ class LeaguepediaImporter:
             agg = scoring.aggregate_appearances(rows)
             agg["player_id"] = player_id
             agg["score"] = agg["rating"] = scoring.split_rating(
-                [r["rating"] for r in rows], settings.GAME_RATING_PRIOR_GAMES, prior_mean=50 * split_prestige
+                [r["rating"] for r in rows], settings.GAME_RATING_PRIOR_GAMES, prior_mean=prestige_prior(split_prestige)
             )
             agg["dimensions"] = scoring.dimension_scores([r["zs"] for r in rows])
             stats.append(agg)

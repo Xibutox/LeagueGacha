@@ -12,7 +12,9 @@ from django.urls import reverse
 from django.utils import timezone
 
 from cards.models import Booster, BoosterStock, Card, PackOpening, Rarity, Roster, RosterPick, UserCard
-from cards.services import GameError, available_packs, exchange, fuse, generate_cards, open_booster, save_roster
+from cards.services import (
+    GameError, available_packs, booster_status, exchange, fuse, generate_cards, open_booster, save_roster,
+)
 
 pytestmark = pytest.mark.django_db
 
@@ -144,7 +146,7 @@ def test_international_boosters_come_less_often(split):
     Split.objects.filter(pk=split.pk).update(league=msi)
     ensure_boosters()
 
-    booster = Booster.objects.get(auto=True, leagues=msi)
+    booster = Booster.objects.get(auto=True, leagues=msi, years="2025")
     assert booster.cooldown_hours > 1 and booster.max_stock < 24
 
 
@@ -516,7 +518,7 @@ def test_removing_a_league_import_cleans_up(bob, full_team, split):
     league = split.league
     other = League.objects.create(name="LoL Champions Korea", short_name="LCK", region="Korea")
     ensure_boosters()
-    auto = Booster.objects.get(auto=True, leagues=league)
+    auto = Booster.objects.get(slug="emea-2025")
     by_hand = Booster.objects.create(name="Ma ligue")
     by_hand.leagues.add(league)
     mixed = Booster.objects.create(name="Deux ligues")
@@ -535,7 +537,6 @@ def test_removing_a_league_import_cleans_up(bob, full_team, split):
     assert not by_hand.is_active
     mixed.refresh_from_db()
     assert mixed.is_active and list(mixed.leagues.all()) == [other]
-    assert Booster.objects.get(slug="tous-les-splits").is_active
     assert Roster.objects.get(pk=roster.pk).score is None
 
 
@@ -728,7 +729,7 @@ def make_league(name, short, region):
     return league
 
 
-def test_the_booster_types_split_ewc_and_riot_international(split):
+def test_the_booster_types(split):
     from cards.services import ensure_boosters
 
     lck = make_league("LoL Champions Korea", "LCK", "Korea")
@@ -736,19 +737,62 @@ def test_the_booster_types_split_ewc_and_riot_international(split):
     worlds = make_league("World Championship", "WCS", "International")
     first_stand = make_league("First Stand", "FST", "International")
     ewc = make_league("Esports World Cup", "EWC", "International")
+    lfl = make_league("La Ligue Française", "LFL", "EMEA")
 
     created = ensure_boosters()
 
-    assert {"Tous les splits", "EMEA 2025", "Corée 2026", "Riot International 2026",
-            "Esports World Cup 2026"} <= set(created)
+    assert {"Booster de base", "Esports World Cup", "EMEA 2025", "Corée 2026",
+            "Riot International 2026"} <= set(created)
+    base = Booster.objects.get(slug="base")
+    assert base.is_active and base.qualified_teams_only
+    assert set(base.leagues.all()) == {split.league, lck}  # pas la LFL
+    every_year = Booster.objects.get(slug="ewc")
+    assert set(every_year.leagues.all()) == {ewc} and not every_year.year_list()
+    assert not every_year.is_active
+    assert not Booster.objects.filter(slug="ewc-2026").exists()
     riot = Booster.objects.get(slug="riot-international-2026")
     assert set(riot.leagues.all()) == {msi, worlds, first_stand}
     assert riot.cooldown_hours > 1 and riot.max_stock < 24
-    assert set(Booster.objects.get(slug="ewc-2026").leagues.all()) == {ewc}
     assert set(Booster.objects.get(slug="korea-2026").leagues.all()) == {lck}
+    assert lfl in Booster.objects.get(slug="emea-2026").leagues.all()
+    # Par région et par année : créés, mais éteints.
+    assert not Booster.objects.filter(auto=True, is_active=True).exclude(slug="base").exists()
     assert ensure_boosters() == []  # relançable
-    assert not Booster.objects.filter(guaranteed_rarity__isnull=True).exists()
     assert {b.guaranteed_rarity.code for b in Booster.objects.all()} == {"rare"}
+
+
+def test_an_activated_booster_stays_active(split):
+    from cards.services import ensure_boosters
+
+    ensure_boosters(deactivate_obsolete=True)
+    Booster.objects.filter(slug="emea-2025").update(is_active=True)
+    ensure_boosters(deactivate_obsolete=True)
+    assert Booster.objects.get(slug="emea-2025").is_active
+
+
+def test_the_base_booster_only_has_teams_qualified_for_an_international(split):
+    from cards.services import ensure_boosters
+    from esport.models import GameAppearance, Split, Tournament
+
+    ensure_boosters()
+    base = Booster.objects.get(slug="base")
+    assert base.card_pool().count() == 0  # personne n'est allé à l'international
+
+    qualified = Card.objects.filter(split=split).first().team
+    msi = make_league("Mid-Season Invitational", "MSI", "International")
+    msi_split = Split.objects.get(league=msi)
+    Split.objects.filter(pk=msi_split.pk).update(year=split.year)
+    tournament = Tournament.objects.create(overview_page="MSI 2025", name="MSI 2025", league=msi,
+                                           split=msi_split, year=split.year)
+    game = GameAppearance.objects.filter(team=qualified).first()
+    game.pk = None
+    game.tournament = tournament
+    game.game_id = "msi-game-1"
+    game.save()
+
+    pool = base.card_pool()
+    assert pool.count() == Card.objects.filter(split=split, team=qualified).count() > 0
+    assert set(pool.values_list("team", flat=True)) == {qualified.pk}
 
 
 def test_init_boosters_retires_the_old_international_booster(split):
@@ -763,7 +807,8 @@ def test_init_boosters_retires_the_old_international_booster(split):
     old.refresh_from_db()
     by_hand.refresh_from_db()
     assert not old.is_active and by_hand.is_active
-    assert Booster.objects.get(slug="ewc-2026").is_active
+    assert Booster.objects.filter(slug="ewc").exists()
+    assert Booster.objects.get(slug="base").is_active
 
 
 def test_the_gestion_creates_the_booster_types(admin_client, split):
@@ -824,3 +869,43 @@ def test_default_drop_rates():
     ensure_default_rarities()
     rates = {r.code: float(r.drop_rate) for r in Rarity.objects.all()}
     assert rates == {"commune": 74, "rare": 20, "epique": 5, "legendaire": 1}
+
+
+def test_the_gestion_resets_chosen_players(admin_client, admin_user, booster, bob, full_team):
+    from cards.models import BoosterStock, PackOpening
+    from cards.services import give_boosters, open_booster
+
+    alice = get_user_model().objects.create_user("alice", password="mdp-alice-123")
+    open_booster(bob, booster)
+    open_booster(alice, booster)
+    save_roster(bob, "Ma team", full_team)
+    give_boosters([bob], booster, 2, given_by=admin_user)
+
+    url = reverse("site:cards_usercard_reinitialiser")
+    assert admin_client.get(url).status_code == 200
+    refused = admin_client.post(url, {"users": [bob.pk]}, content_type="application/json")
+    assert refused.status_code == 400 and UserCard.objects.filter(user=bob).exists()
+
+    response = admin_client.post(url, {"users": [bob.pk], "confirm": True}, content_type="application/json")
+    assert response.status_code == 200, response.content
+    assert "1 joueur(s) remis à zéro" in response.json()["_message"]
+    assert not UserCard.objects.filter(user=bob).exists()
+    assert not PackOpening.objects.filter(user=bob).exists()
+    assert not Roster.objects.filter(user=bob).exists()
+    assert not BoosterStock.objects.filter(user=bob).exists()
+    assert UserCard.objects.filter(user=alice).exists()  # les autres ne bougent pas
+    assert booster_status(bob, [booster])[booster.pk]["available"] == booster.starting_stock
+
+
+def test_a_booster_without_visual_shows_its_players_in_legendary(client, booster, bob):
+    from cards.services import format_rate
+
+    client.force_login(bob)
+    page = client.get(reverse("cards:home"))
+    showcase = page.context["boosters"][0].showcase
+    assert 1 <= len(showcase) <= 6
+    assert all(item["rarity"].code == "legendaire" for item in showcase)
+    assert showcase[0]["rate"] == "0,1 %"  # 1 % en légendaire, 10 joueurs
+    html = page.content.decode()
+    assert "data-showcase" in html and "showcase-rate" in html
+    assert format_rate(1 / 480) == "0,0021 %" and format_rate(2.5) == "2,5 %"

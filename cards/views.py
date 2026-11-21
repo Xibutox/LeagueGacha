@@ -17,6 +17,7 @@ from esport.scoring import COHERENCE_WEIGHT, DIMENSIONS, SLOT_PLAYER_WEIGHT, UNP
 
 from .models import COMPOSITIONS, ROLES, Booster, Card, CardChampion, PackOpening, Rarity, Roster, UserCard
 from .services import (
+    booster_showcase,
     GameError,
     best_rarities,
     booster_status,
@@ -64,6 +65,8 @@ def home(request):
         if b.card_pool().exists()
     ]
     boosters = _with_status(request.user, boosters)
+    for booster in boosters:
+        booster.showcase = [] if booster.image else booster_showcase(booster)
     context = {"boosters": boosters, "rarities": Rarity.objects.all()}
     if request.user.is_authenticated:
         context["unlimited"] = any(b.status["unlimited"] for b in boosters)
