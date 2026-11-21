@@ -62,7 +62,7 @@ services:
   # Les migrations à chaque démarrage, avant le reste.
   migrate:
     <<: *app
-    command: python manage.py migrate --noinput
+    command: sh -c "python manage.py migrate --noinput && python manage.py init_boosters"
 
   web:
     <<: *app

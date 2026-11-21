@@ -265,6 +265,11 @@ class BoosterStock(models.Model):
     booster = models.ForeignKey(Booster, verbose_name="booster", on_delete=models.CASCADE, related_name="stocks")
     stock = models.PositiveSmallIntegerField("réserve", default=0)
     refilled_at = models.DateTimeField("compté le")
+    bonus = models.PositiveIntegerField(
+        "boosters offerts",
+        default=0,
+        help_text="Offerts par l'administration : en plus de la réserve, sans plafond ni recharge.",
+    )
 
     class Meta:
         verbose_name = "réserve de boosters"
@@ -273,6 +278,35 @@ class BoosterStock(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.booster} : {self.stock}"
+
+
+class BoosterGift(models.Model):
+    """Des boosters offerts à un joueur du site par l'administration."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="booster_gifts"
+    )
+    booster = models.ForeignKey(Booster, verbose_name="booster", on_delete=models.CASCADE, related_name="gifts")
+    quantity = models.PositiveSmallIntegerField("boosters", default=1)
+    message = models.CharField("message", max_length=200, blank=True)
+    given_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        verbose_name="offert par",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+    )
+    created_at = models.DateTimeField("offert le", auto_now_add=True)
+    seen_at = models.DateTimeField("vu le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "cadeau de boosters"
+        verbose_name_plural = "cadeaux de boosters"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} — {self.quantity} × {self.booster}"
 
 
 class UserCard(models.Model):

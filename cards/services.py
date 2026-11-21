@@ -9,6 +9,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from django.db.models import F
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -29,6 +30,7 @@ from .models import (
     COMPOSITIONS,
     ROLES,
     Booster,
+    BoosterGift,
     BoosterStock,
     Card,
     CardChampion,
@@ -117,12 +119,41 @@ DEFAULT_BOOSTER_COLOR = "#1f6feb"
 INTERNATIONAL_COOLDOWN_HOURS = 6
 INTERNATIONAL_MAX_STOCK = 6
 
+#: Les compétitions internationales de Riot (noms courts et morceaux de noms Leaguepedia).
+RIOT_EVENTS_SHORT = {"MSI", "WCS", "FST", "WORLDS"}
+RIOT_EVENTS_NAMES = ("mid-season invitational", "world championship", "first stand")
+EWC_SHORT = {"EWC"}
+EWC_NAMES = ("esports world cup",)
 
-def ensure_boosters() -> list[str]:
-    """Un booster « Tous les splits » (dernière carte au moins rare) et un
-    booster par région et par année jouées. Ne touche pas aux boosters
-    existants (ceux faits à la main restent tels quels).
-    Renvoie les noms des boosters créés."""
+
+def booster_family(league) -> tuple[str, str, str]:
+    """La famille de booster d'une ligue : (clé, libellé, couleur).
+
+    Ligue locale : sa région (« Corée »). International : l'Esports World
+    Cup à part, les compétitions de Riot (First Stand, MSI, Worlds)
+    ensemble, le reste dans « International »."""
+    short = (league.short_name or "").upper()
+    name = (league.name or "").lower()
+    if short in EWC_SHORT or any(n in name for n in EWC_NAMES):
+        return "ewc", "Esports World Cup", "#0f8f6f"
+    if short in RIOT_EVENTS_SHORT or any(n in name for n in RIOT_EVENTS_NAMES):
+        return "riot-international", "Riot International", "#d13639"
+    region = league.region or league.short_name or league.name
+    label = REGION_LABELS.get(region, region)
+    return region, label, REGION_COLORS.get(region, DEFAULT_BOOSTER_COLOR)
+
+
+def ensure_boosters(deactivate_obsolete: bool = False) -> list[str]:
+    """Les boosters types : « Tous les splits » (dernière carte au moins
+    rare), puis un booster par année et par famille de ligues
+    (booster_family) : chaque région, l'Esports World Cup, et Riot
+    International (First Stand, MSI, Worlds).
+
+    Ne touche pas aux réglages des boosters existants (rythme, visuel,
+    taux) ; ajoute seulement les nouvelles ligues à leur famille.
+    deactivate_obsolete=True désactive les boosters automatiques qu'aucune
+    famille ne produit plus (anciens découpages). Renvoie les noms des
+    boosters créés."""
     ensure_default_rarities()
     created = []
     rare = Rarity.objects.filter(code="rare").first()
@@ -143,32 +174,40 @@ def ensure_boosters() -> list[str]:
         everything.color = "#3fb6c9"
         everything.save(update_fields=["color"])
 
-    groups: dict[tuple[str, int], set] = {}
-    for split in Split.objects.filter(is_playable=True, cards__isnull=False).select_related("league").distinct():
-        groups.setdefault((region_of(split), split.year), set()).add(split.league)
+    groups: dict[tuple[str, int], dict] = {}
+    for split in Split.objects.filter(is_playable=True).select_related("league"):
+        key, label, color = booster_family(split.league)
+        group = groups.setdefault((key, split.year), {"label": label, "color": color, "leagues": set()})
+        group["leagues"].add(split.league)
 
-    for (region, year), leagues in sorted(groups.items(), key=lambda g: (-g[0][1], g[0][0])):
-        label = REGION_LABELS.get(region, region)
-        name = f"{label} {year}"
+    wanted = set()
+    for (key, year), group in sorted(groups.items(), key=lambda g: (-g[0][1], g[0][0])):
+        name = f"{group['label']} {year}"
+        slug = slugify(f"{key}-{year}")[:100]
+        wanted.add(slug)
+        international = key in {"ewc", "riot-international"} or key == "International"
         defaults = {
             "name": name,
-            "description": f"Les joueurs de {', '.join(sorted(l.short_name or l.name for l in leagues))} en {year}.",
+            "description": f"Les joueurs de {', '.join(sorted(l.short_name or l.name for l in group['leagues']))} en {year}.",
             "years": str(year),
             "auto": True,
-            "order": 100 - (year % 100),
+            "order": 100 - (year % 100) + (5 if international else 0),
+            "color": group["color"],
         }
-        if region == "International":
+        if international:
             defaults.update(cooldown_hours=INTERNATIONAL_COOLDOWN_HOURS, max_stock=INTERNATIONAL_MAX_STOCK,
                             starting_stock=1)
-        booster, was_created = Booster.objects.get_or_create(slug=slugify(f"{region}-{year}")[:100], defaults=defaults)
-        # Une ligue de la région importée plus tard rejoint le booster.
-        booster.leagues.add(*leagues)
-        color = REGION_COLORS.get(region)
-        if color and booster.auto and booster.color == DEFAULT_BOOSTER_COLOR:
-            booster.color = color
+        booster, was_created = Booster.objects.get_or_create(slug=slug, defaults=defaults)
+        # Une ligue de la famille importée plus tard rejoint le booster.
+        booster.leagues.add(*group["leagues"])
+        if booster.auto and booster.color == DEFAULT_BOOSTER_COLOR and group["color"] != DEFAULT_BOOSTER_COLOR:
+            booster.color = group["color"]
             booster.save(update_fields=["color"])
         if was_created:
             created.append(name)
+
+    if deactivate_obsolete:
+        Booster.objects.filter(auto=True, is_active=True).exclude(slug__in=wanted).update(is_active=False)
     return created
 
 
@@ -402,10 +441,8 @@ def _period(booster: Booster) -> timedelta:
     return timedelta(hours=float(booster.cooldown_hours))
 
 
-def available_packs(stock: BoosterStock, now=None) -> tuple[int, object]:
-    """(boosters disponibles, date du prochain) — le prochain vaut None
-    quand la réserve est pleine."""
-    now = now or timezone.now()
+def _regular_packs(stock: BoosterStock, now) -> tuple[int, object]:
+    """La réserve qui se recharge : (disponibles, date du prochain)."""
     booster = stock.booster
     period = _period(booster)
     gained = max(0, int((now - stock.refilled_at) / period))
@@ -413,6 +450,14 @@ def available_packs(stock: BoosterStock, now=None) -> tuple[int, object]:
     if available >= booster.max_stock:
         return available, None
     return available, stock.refilled_at + (gained + 1) * period
+
+
+def available_packs(stock: BoosterStock, now=None) -> tuple[int, object]:
+    """(boosters disponibles, date du prochain) — le prochain vaut None
+    quand la réserve est pleine. Les boosters offerts s'ajoutent, sans
+    plafond."""
+    available, next_at = _regular_packs(stock, now or timezone.now())
+    return available + stock.bonus, next_at
 
 
 def get_stock(user, booster: Booster) -> BoosterStock:
@@ -435,7 +480,7 @@ def booster_status(user, boosters) -> dict[int, dict]:
         stock.booster = booster
         available, next_at = available_packs(stock)
         out[booster.pk] = {"available": available, "max": booster.max_stock, "next_at": next_at,
-                           "unlimited": unlimited}
+                           "unlimited": unlimited, "gifted": stock.bonus}
     return out
 
 
@@ -446,11 +491,18 @@ def _take_pack(user, booster: Booster) -> None:
     stock = BoosterStock.objects.select_for_update().get(user=user, booster=booster)
     stock.booster = booster
     now = timezone.now()
-    available, next_at = available_packs(stock, now)
+    available, next_at = _regular_packs(stock, now)
     if available <= 0:
+        if stock.bonus:
+            # La réserve est vide : on prend un booster offert.
+            stock.bonus -= 1
+            stock.save(update_fields=["bonus"])
+            return
         minutes = max(1, round((next_at - now).total_seconds() / 60))
         wait = f"{minutes} min" if minutes < 60 else f"{minutes // 60} h {minutes % 60:02d}"
         raise GameError(f"Plus de booster {booster.name} en réserve : le prochain arrive dans {wait}.")
+    # La réserve d'abord : elle seule se recharge, et une réserve pleine
+    # gaspillerait sa recharge.
     period = _period(booster)
     gained = max(0, int((now - stock.refilled_at) / period))
     if stock.stock + gained >= booster.max_stock:
@@ -460,6 +512,34 @@ def _take_pack(user, booster: Booster) -> None:
         stock.refilled_at += gained * period
     stock.stock = available - 1
     stock.save(update_fields=["stock", "refilled_at"])
+
+
+MAX_GIFT = 100
+
+
+def give_boosters(users, booster: Booster, quantity: int, given_by=None, message: str = "") -> int:
+    """Offre des boosters à des joueurs du site : ils s'ajoutent à leur
+    réserve, sans plafond. Renvoie le nombre de joueurs servis."""
+    if quantity < 1 or quantity > MAX_GIFT:
+        raise GameError(f"Entre 1 et {MAX_GIFT} boosters.")
+    count = 0
+    with transaction.atomic():
+        for user in users:
+            stock = get_stock(user, booster)
+            BoosterStock.objects.filter(pk=stock.pk).update(bonus=F("bonus") + quantity)
+            BoosterGift.objects.create(
+                user=user, booster=booster, quantity=quantity, given_by=given_by, message=message[:200]
+            )
+            count += 1
+    return count
+
+
+def unseen_gifts(user) -> list:
+    """Les cadeaux pas encore annoncés au joueur ; les marque comme vus."""
+    gifts = list(BoosterGift.objects.filter(user=user, seen_at__isnull=True).select_related("booster", "given_by"))
+    if gifts:
+        BoosterGift.objects.filter(pk__in=[g.pk for g in gifts]).update(seen_at=timezone.now())
+    return gifts
 
 
 def open_booster(user, booster: Booster, rng=None) -> PackOpening:

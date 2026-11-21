@@ -1,6 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Boosters — Wiki LoL Esport{% endblock %}
+{% block title %}Boosters — LeagueGacha{% endblock %}
 {% block content %}
+{% for gift in gifts %}
+  <div class="gift" role="status" style="--booster: {{ gift.booster.color }}">
+    <span class="gift-icon" aria-hidden="true"></span>
+    <div>
+      <b>Cadeau : {{ gift.quantity }} booster{{ gift.quantity|pluralize }} {{ gift.booster.name }}</b>
+      <span>{% if gift.given_by %}offert{{ gift.quantity|pluralize }} par {{ gift.given_by.username }}{% endif %}{% if gift.message %} — « {{ gift.message }} »{% endif %}</span>
+    </div>
+  </div>
+{% endfor %}
 <section class="lobby">
   <div>
     {% if user.is_authenticated %}
@@ -43,7 +52,7 @@
             <b>∞</b><span>illimité (compte staff)</span>
           {% else %}
             <b class="{% if not s.available %}empty{% endif %}">{{ s.available }}<small class="muted"> / {{ s.max }}</small></b>
-            <span>{% if s.next_at %}+1 dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% else %}réserve pleine{% endif %}</span>
+            <span>{% if s.gifted %}dont {{ s.gifted }} offert{{ s.gifted|pluralize }} · {% endif %}{% if s.next_at %}+1 dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% else %}réserve pleine{% endif %}</span>
           {% endif %}
         </div>
         {% if not s.unlimited %}<div class="meter" aria-hidden="true"><span style="width: {% widthratio s.available s.max 100 %}%"></span></div>{% endif %}

@@ -14,3 +14,7 @@ game_media/
 backups/
 deploy/export/
 *.local.bat
+
+# Déploiement automatique (Pi)
+.tag-deploye
+.tag-refuse

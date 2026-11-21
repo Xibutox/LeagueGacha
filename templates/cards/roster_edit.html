@@ -1,6 +1,6 @@
 {% extends "base.html" %}
 {% load static %}
-{% block title %}{% if roster %}{{ roster.name }}{% else %}Nouvelle équipe{% endif %} — Wiki LoL Esport{% endblock %}
+{% block title %}{% if roster %}{{ roster.name }}{% else %}Nouvelle équipe{% endif %} — LeagueGacha{% endblock %}
 {% block content %}
 <form method="post" id="builder" class="builder" novalidate>{% csrf_token %}
   <input type="hidden" name="picks" id="picks-input">

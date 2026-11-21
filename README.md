@@ -1,8 +1,10 @@
-# Wiki LoL Esport
+# LeagueGacha
 
-Jeu web de collection de cartes des joueurs pros de League of Legends, dans
-l'esprit de Wiki-Go : on ouvre des boosters (qui se rechargent toutes les heures) pour
-collectionner des cartes.
+Jeu web de collection de cartes des joueurs pros de League of Legends : on
+ouvre des boosters (qui se rechargent toutes les heures) pour collectionner
+des cartes, on monte des équipes et on grimpe au classement.
+
+En ligne : https://leaguegacha.freeboxos.fr/
 
 - **Une carte = un joueur × une période** (« Faker — LCK 2026 » : toute
   l'année d'une ligue locale, ou un événement international).
@@ -56,7 +58,7 @@ docker compose exec web python manage.py lp_tournaments --league LEC --year 2025
 docker compose exec web python manage.py lp_import --league LEC --year 2025
 
 # Raretés par défaut, un booster par split et un booster « Tous les splits »
-docker compose exec web python manage.py setup_game
+docker compose exec web python manage.py init_boosters
 ```
 
 Le plus simple, dans la gestion :
@@ -96,7 +98,7 @@ WCS pour les Worlds, MSI…).
 | `lp_tournaments --league LEC --year 2025 [--name-like Spring] [--save]` | Liste ou enregistre les tournois, et crée les splits |
 | `lp_import --league LEC --year 2025` ou `--split <slug>` | Import complet (`--no-images` pour aller plus vite) |
 | `recompute_cards [--split <slug>]` | Recalcule stats, notes et raretés sans réseau |
-| `setup_game` | Raretés par défaut et boosters |
+| `init_boosters` | Raretés par défaut et boosters types |
 
 ## La gestion (django-generic)
 
@@ -183,8 +185,17 @@ avoir ses propres taux (onglet du booster).
   perdus. Un nouveau joueur en reçoit 3. Tout se règle par booster dans
   **Jeu › Boosters** ; les boosters internationaux automatiques partent sur
   6 heures et 6 au maximum.
-- **Boosters automatiques.** L'import crée un booster par région et par
-  année (« Corée 2026 »), plus « Tous les splits ».
+- **Boosters types.** Un booster par région et par année (« Corée 2026 »),
+  un booster **Esports World Cup** par année, un booster **Riot
+  International** (First Stand, MSI, Worlds) par année, et « Tous les
+  splits ». Ils sont créés tout seuls après chaque import et à chaque
+  démarrage du site (`python manage.py init_boosters`), ou à la demande :
+  **Jeu › Boosters › Créer les boosters types**. Les réglages d'un booster
+  existant (rythme, visuel, taux) sont gardés.
+- **Offrir des boosters.** **Jeu › Boosters › Offrir des boosters** : un
+  booster, un nombre, des joueurs (ou tous). Ils s'ajoutent à la réserve
+  sans plafond ni recharge ; le joueur voit le cadeau à sa prochaine
+  visite. Historique : **Joueurs du site › Cadeaux de boosters**.
 - **Boosters à la main.** Dans **Jeu › Boosters**, en choisissant des
   ligues, des années (« 2025, 2026 ») et des périodes.
 - **Visuel.** Chaque booster peut recevoir une image (PNG, JPEG, WebP ou
@@ -284,11 +295,36 @@ Dans Freebox OS (http://mafreebox.freebox.fr) :
 Vérifier depuis la 4G (hors Wi-Fi) : `https://<domaine>/` montre le jeu,
 `https://<domaine>/gestion/` répond « Accès réservé au réseau local ».
 
+### Déploiement continu (tags)
+
+Une nouvelle version se publie par un tag `vX.Y.Z` :
+
+```bash
+git tag v1.2.0
+git push origin v1.2.0
+```
+
+1. **GitHub Actions** (`.github/workflows/ci.yml`) lance les tests à
+   chaque push ; sur un tag, il construit aussi l'image de production pour
+   le Pi (arm64) et crée une release GitHub.
+2. **Le Pi** regarde toutes les 5 minutes s'il y a un nouveau tag
+   (`deploy/raspberry/deploiement-auto.sh`, timer systemd
+   `leaguegacha-deploiement`). Il ne déploie que si le job `tests` de ce tag
+   est vert : sauvegarde, passage au tag, reconstruction, relance (les
+   migrations et les boosters types passent au démarrage), puis il vérifie
+   que le site répond. Sinon, il revient à la version d'avant.
+
+Le Pi va chercher les nouveautés lui-même : aucun port de plus à ouvrir,
+aucun secret dans GitHub. Sur un Pi installé avant cette procédure, une
+fois : `git pull && bash deploy/raspberry/activer-deploiement-auto.sh`.
+
+Suivre les déploiements : `journalctl -u leaguegacha-deploiement -f`.
+
 ### Au quotidien, sur le Pi (`cd /opt/wiki-lol-esport`)
 
 | Commande | Rôle |
 |---|---|
-| `./deploy/raspberry/mise-a-jour.sh` | Sauvegarde, `git pull`, reconstruit et relance |
+| `./deploy/raspberry/mise-a-jour.sh` | Déploie tout de suite le dernier tag aux tests verts (`v1.2.0` : un tag précis ; `--main` : la branche main) |
 | `./deploy/raspberry/sauvegarde.sh` | Sauvegarde tout de suite (base + images) |
 | `./deploy/raspberry/importer-donnees.sh base.dump fichiers.tar.gz` | Restaure une sauvegarde |
 | `sudo docker compose -f compose.prod.yaml --env-file .env.prod logs -f caddy web` | Les journaux |

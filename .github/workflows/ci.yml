@@ -1,0 +1,64 @@
+# Intégration continue : les tests à chaque push et pull request ; sur un
+# tag vX.Y.Z, en plus, l'image de production construite pour le Raspberry
+# Pi (arm64) et une release GitHub. Le Pi déploie lui-même les tags dont
+# le job « tests » est vert (deploy/raspberry/deploiement-auto.sh).
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+      - name: Dépendances
+        env:
+          PIP_CONSTRAINT: django-generic/requirements/constraints.txt
+        run: pip install "./django-generic[export,events,tasks,postgres]" -r requirements.txt pyyaml
+      - name: Tests
+        run: python -m pytest -q
+
+  image:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Image de production (arm64, comme le Pi)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: docker/Dockerfile.prod
+          platforms: linux/arm64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, image]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Release GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag || true

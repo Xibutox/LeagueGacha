@@ -5,6 +5,7 @@ import pytest
 
 from cards.models import (
     Booster,
+    BoosterGift,
     BoosterRarityWeight,
     BoosterStock,
     Card,
@@ -60,6 +61,7 @@ class TestEveryPage(PageSweep):
             "esport.champion": affinity.champion,
             "cards.rosterslot": roster.slots.first(),
             "cards.rosterpick": roster.slots.first().picks.first(),
+            "cards.boostergift": BoosterGift.objects.create(user=admin_user, booster=booster, quantity=2),
             "cards.boosterstock": BoosterStock.objects.get_or_create(
                 user=admin_user, booster=booster, defaults={"refilled_at": opening.opened_at})[0],
         }
@@ -71,6 +73,8 @@ class TestEveryPage(PageSweep):
         "site:cards_packopening_add": (403,),
         "site:cards_packopeningcard_add": (403,),
         "site:cards_cardchampion_add": (403,),
+        # Un cadeau se fait par « Offrir des boosters », pas par un ajout.
+        "site:cards_boostergift_add": (403,),
         # Fusionner, échanger, l'aperçu d'une équipe : en POST.
         "cards:fuse": (405,),
         "cards:exchange": (405,),

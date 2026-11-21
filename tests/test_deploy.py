@@ -41,3 +41,24 @@ def test_the_management_is_reserved_to_the_local_network():
 def test_production_secrets_stay_out_of_git_and_images():
     for name in (".gitignore", ".dockerignore"):
         assert ".env.prod" in (ROOT / name).read_text(encoding="utf-8")
+
+
+def test_the_pi_waits_for_the_ci_job_it_names():
+    workflow = yaml.safe_load((ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8"))
+    triggers = workflow.get("on") or workflow.get(True)  # « on » lu comme True par YAML 1.1
+    assert "v*" in triggers["push"]["tags"]
+    assert "tests" in workflow["jobs"]
+    script = (ROOT / "deploy" / "raspberry" / "deploiement-auto.sh").read_text(encoding="utf-8")
+    assert "check_name=tests" in script
+    assert "sauvegarde.sh" in script and "healthy" in script
+
+
+def test_startup_creates_the_booster_types():
+    migrate = compose()["services"]["migrate"]["command"]
+    assert "migrate --noinput" in migrate and "init_boosters" in migrate
+
+
+def test_the_server_scripts_are_executable_and_unix():
+    for script in (ROOT / "deploy" / "raspberry").glob("*.sh"):
+        assert script.stat().st_mode & 0o111, script.name
+        assert b"\r\n" not in script.read_bytes(), script.name

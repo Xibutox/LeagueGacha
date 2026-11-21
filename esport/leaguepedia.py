@@ -53,7 +53,7 @@ def _clean(value):
 class LeaguepediaClient:
     def __init__(
         self,
-        user_agent: str = "WikiLolEsport/0.1",
+        user_agent: str = "LeagueGacha/0.1",
         delay: float = 1.5,
         session: requests.Session | None = None,
         image_session: requests.Session | None = None,
@@ -192,7 +192,7 @@ class LeaguepediaClient:
     # requêtes que l'API accepte. On essaie plusieurs jeux d'en-têtes, tous
     # honnêtes (ils nomment le projet), et on garde le premier qui marche.
     def _image_header_strategies(self) -> list[tuple[str, dict]]:
-        project = self.session.headers.get("User-Agent", "WikiLolEsport")
+        project = self.session.headers.get("User-Agent", "LeagueGacha")
         accept = "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8,*/*;q=0.5"
         compatible = f"Mozilla/5.0 (compatible; {project})"
         return [

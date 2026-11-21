@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Installe et sécurise un Raspberry Pi pour héberger Wiki LoL Esport.
+# Installe et sécurise un Raspberry Pi pour héberger LeagueGacha.
 #
 # À lancer sur le Pi, en tant que « pi » (sudo est demandé quand il faut) :
 #     bash install.sh
@@ -135,7 +135,7 @@ sudo usermod -aG docker "$USER"
 bold "SSH : clé seulement, réseau local seulement"
 if [ -s "$HOME/.ssh/authorized_keys" ]; then
 	sudo tee /etc/ssh/sshd_config.d/90-wiki-lol.conf >/dev/null <<CONF
-# Posé par install.sh (Wiki LoL Esport).
+# Posé par install.sh (LeagueGacha).
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 PermitRootLogin no
@@ -221,7 +221,10 @@ if [[ "$REPO_URL" == git@* ]]; then
 	fi
 fi
 if [ -d "$APP_DIR/.git" ]; then
-	git -C "$APP_DIR" pull --ff-only
+	# Une installation existante : la version déployée (un tag), ou main.
+	git -C "$APP_DIR" fetch --quiet --tags origin
+	REF="$(cat "$APP_DIR/.tag-deploye" 2>/dev/null || echo origin/main)"
+	git -C "$APP_DIR" -c advice.detachedHead=false checkout --quiet --force "$REF"
 	git -C "$APP_DIR" submodule update --init --recursive
 else
 	git clone --recurse-submodules "$REPO_URL" "$APP_DIR"
@@ -244,7 +247,7 @@ DJANGO_HSTS_SECONDS=31536000
 # Le jeu
 GAME_STAFF_UNLIMITED=True
 DDRAGON_AUTO_SYNC=True
-LEAGUEPEDIA_USER_AGENT=WikiLolEsport/1.0 (contact: $ACME_EMAIL)
+LEAGUEPEDIA_USER_AGENT=LeagueGacha/1.0 (contact: $ACME_EMAIL)
 CONF
 	umask 022
 else
@@ -259,10 +262,14 @@ sudo "${COMPOSE[@]}" ps
 bold "Sauvegarde de la base chaque nuit"
 chmod +x deploy/raspberry/*.sh
 sudo tee /etc/cron.d/wiki-lol-sauvegarde >/dev/null <<CONF
-# Sauvegarde de la base de Wiki LoL Esport, chaque nuit à 3 h 17.
-17 3 * * * $USER $APP_DIR/deploy/raspberry/sauvegarde.sh >> $APP_DIR/backups/sauvegarde.log 2>&1
+# Sauvegarde de la base de LeagueGacha, chaque nuit à 3 h 17.
+17 3 * * * $USER /usr/bin/bash $APP_DIR/deploy/raspberry/sauvegarde.sh >> $APP_DIR/backups/sauvegarde.log 2>&1
 CONF
 mkdir -p backups
+
+# ------------------------------------------------------------ Déploiement automatique
+bold "Déploiement automatique des tags GitHub"
+bash deploy/raspberry/activer-deploiement-auto.sh
 
 # ------------------------------------------------------------ Fin
 bold "Terminé"
@@ -270,6 +277,9 @@ cat <<FIN
 Le site       : https://$SITE_DOMAIN/   (une fois la Freebox configurée)
 Réseau local  : https://$LAN_IP:8443/   (gestion : /gestion/ ; le navigateur
                 avertit sur le certificat local la première fois)
+
+Mises à jour : publie un tag depuis le PC (git tag v1.2.0 && git push origin v1.2.0),
+le Pi le déploie dans les 5 minutes une fois les tests GitHub verts.
 
 Il reste :
   - créer le compte administrateur :

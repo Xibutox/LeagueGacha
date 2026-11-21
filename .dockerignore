@@ -16,3 +16,6 @@ game_media
 .env.prod
 backups
 deploy/export
+.tag-deploye
+.tag-refuse
+.github

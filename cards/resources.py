@@ -14,6 +14,7 @@ from generic.sites import (
     Kpi,
     ModelResource,
     RelatedTable,
+    ResourcePage,
     TabularInline,
     TagStyle,
     action,
@@ -22,8 +23,10 @@ from generic.sites import (
     register,
 )
 
+from .form_pages import GiveBoostersPage, InitBoostersPage
 from .models import (
     Booster,
+    BoosterGift,
     BoosterRarityWeight,
     BoosterStock,
     Card,
@@ -337,7 +340,25 @@ class BoosterResource(ModelResource):
     )
     form_overrides = {"color": {"widget": "color"}}
     inlines = (BoosterRarityWeightInline,)
-    related_tables = (RelatedTable("openings", icon="history"),)
+    related_tables = (RelatedTable("openings", icon="history"), RelatedTable("gifts", icon="redeem"))
+    pages = (
+        ResourcePage(
+            "offrir",
+            view=GiveBoostersPage,
+            title=_("Offrir des boosters"),
+            icon="featured_seasonal_and_gifts",
+            permission="change",
+            navigation=True,
+        ),
+        ResourcePage(
+            "boosters-types",
+            view=InitBoostersPage,
+            title=_("Créer les boosters types"),
+            icon="auto_awesome",
+            permission="add",
+            navigation=True,
+        ),
+    )
 
     def get_list_queryset(self, request):
         # La taille du pool de chaque booster, calculée en mémoire en un
@@ -582,10 +603,10 @@ class BoosterStockResource(ModelResource):
         "grossit d'un booster par période jusqu'au maximum."
     )
     history = False
-    list_display = ("user", "booster", "stock", "available", "refilled_at")
+    list_display = ("user", "booster", "stock", "bonus", "available", "refilled_at")
     list_select_related = ("user", "booster")
     search_fields = ("user__username", "booster__name")
-    fields = (("user", "booster"), ("stock", "refilled_at"))
+    fields = (("user", "booster"), ("stock", "bonus"), "refilled_at")
 
     @display(description=_("Disponibles maintenant"))
     def available(self, stock):
@@ -615,4 +636,24 @@ class CardChampionResource(ModelResource):
         return False
 
     def has_change_permission(self, request, obj=None):
+        return False
+
+
+@register(BoosterGift)
+class BoosterGiftResource(ModelResource):
+    icon = "redeem"
+    group = PLAYERS
+    order = 4
+    label_plural = _("cadeaux de boosters")
+    description = _("Les boosters offerts par l'administration (Jeu › Boosters › Offrir des boosters).")
+    history = False
+
+    list_display = ("created_at", "user", "booster", "quantity", "given_by", "message", "seen_at")
+    list_select_related = ("user", "booster", "given_by")
+    search_fields = ("user__username", "booster__name", "message")
+    ordering = ("-created_at",)
+    fields = (("user", "booster"), ("quantity", "given_by"), "message", "seen_at")
+    readonly_fields = ("given_by", "seen_at")
+
+    def has_add_permission(self, request):
         return False

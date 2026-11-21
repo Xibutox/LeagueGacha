@@ -28,6 +28,7 @@ from .services import (
     open_booster,
     roster_picks,
     save_roster,
+    unseen_gifts,
 )
 
 
@@ -70,6 +71,7 @@ def home(request):
         context["owned_count"] = UserCard.objects.filter(user=request.user).values("card").distinct().count()
         context["total_count"] = _playable_cards().count()
         context["recent_openings"] = PackOpening.objects.filter(user=request.user).select_related("booster")[:5]
+        context["gifts"] = unseen_gifts(request.user)
         best = Roster.objects.filter(user=request.user, score__isnull=False).order_by("-score").first()
         context["best_roster"] = best
     return render(request, "cards/home.html", context)

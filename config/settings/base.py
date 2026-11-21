@@ -282,13 +282,13 @@ LOGGING = logging_config(
     level=env("DJANGO_LOG_LEVEL", "INFO"),
     file=env("DJANGO_LOG_FILE") or None,
 )
-EMAIL_SUBJECT_PREFIX = "[Wiki LoL Esport] "
+EMAIL_SUBJECT_PREFIX = "[LeagueGacha] "
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
 
 # -- Le framework ------------------------------------------------------------
 
 GENERIC = {
-    "SITE_TITLE": "Wiki LoL Esport — gestion",
+    "SITE_TITLE": "LeagueGacha — gestion",
     "SITE_ICON": "playing_cards",
     # Doré, comme le jeu.
     "THEME": {"--ui-hue": "75"},
@@ -314,7 +314,7 @@ GAME_RATING_PRIOR_GAMES = env_int("GAME_RATING_PRIOR_GAMES", 3)
 DDRAGON_AUTO_SYNC = env_bool("DDRAGON_AUTO_SYNC", True)
 
 LEAGUEPEDIA_USER_AGENT = env(
-    "LEAGUEPEDIA_USER_AGENT", "WikiLolEsport/0.2 (projet perso)"
+    "LEAGUEPEDIA_USER_AGENT", "LeagueGacha/0.2 (projet perso)"
 )
 #: Pause (secondes) entre deux requêtes, pour ne pas être limité.
 LEAGUEPEDIA_DELAY = env_float("LEAGUEPEDIA_DELAY", 1.5)

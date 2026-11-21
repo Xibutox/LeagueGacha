@@ -656,3 +656,122 @@ def test_the_gestion_uploads_a_booster_visual(admin_user, booster, settings, tmp
         format="multipart",
     )
     assert bad.status_code == 400
+
+
+# --------------------------------------------------------------------- Cadeaux de boosters
+def test_gifted_boosters_add_up_beyond_the_maximum(booster, bob, admin_user):
+    from cards.models import BoosterGift
+    from cards.services import booster_status, give_boosters
+
+    give_boosters([bob], booster, 10, given_by=admin_user, message="Bienvenue !")
+
+    status = booster_status(bob, [booster])[booster.pk]
+    assert status["available"] == 2 + 10 and status["gifted"] == 10  # 2 de départ, max 3
+    gift = BoosterGift.objects.get(user=bob)
+    assert (gift.quantity, gift.given_by, gift.message) == (10, admin_user, "Bienvenue !")
+
+
+def test_the_regular_stock_is_used_before_the_gifts(booster, bob):
+    from cards.services import give_boosters
+
+    give_boosters([bob], booster, 1)
+    open_booster(bob, booster)
+    open_booster(bob, booster)
+    stock = BoosterStock.objects.get(user=bob, booster=booster)
+    assert (stock.stock, stock.bonus) == (0, 1)
+
+    open_booster(bob, booster)  # la réserve est vide : le cadeau sert
+    stock.refresh_from_db()
+    assert stock.bonus == 0
+    with pytest.raises(GameError):
+        open_booster(bob, booster)
+
+
+def test_a_gift_is_announced_once_on_the_home_page(client, booster, bob, admin_user):
+    from cards.services import give_boosters
+
+    give_boosters([bob], booster, 3, given_by=admin_user, message="Pour ton anniversaire")
+    client.force_login(bob)
+
+    page = client.get(reverse("cards:home")).content.decode()
+    assert "Cadeau : 3 boosters Test" in page and "Pour ton anniversaire" in page
+    assert "dont 3 offerts" in page
+    assert "Cadeau :" not in client.get(reverse("cards:home")).content.decode()
+
+
+def test_the_gestion_gives_boosters_to_chosen_players_or_everyone(admin_client, booster, bob):
+    from cards.models import BoosterGift
+
+    url = reverse("site:cards_booster_offrir")
+    assert admin_client.get(url).status_code == 200
+
+    response = admin_client.post(url, {"booster": booster.pk, "quantity": 2, "users": [bob.pk]},
+                                 content_type="application/json")
+    assert response.status_code == 200, response.content
+    assert "offert(s) à 1 joueur(s)" in response.json()["_message"]
+
+    response = admin_client.post(url, {"booster": booster.pk, "quantity": 1, "everyone": True},
+                                 content_type="application/json")
+    assert response.status_code == 200, response.content
+    assert BoosterGift.objects.filter(user=bob).count() == 2
+
+    refused = admin_client.post(url, {"booster": booster.pk, "quantity": 1}, content_type="application/json")
+    assert refused.status_code == 400
+
+
+# --------------------------------------------------------------------- Boosters types
+def make_league(name, short, region):
+    from esport.models import League, Split
+
+    league = League.objects.create(name=name, short_name=short, region=region)
+    Split.objects.create(league=league, name=f"{short} 2026", year=2026)
+    return league
+
+
+def test_the_booster_types_split_ewc_and_riot_international(split):
+    from cards.services import ensure_boosters
+
+    lck = make_league("LoL Champions Korea", "LCK", "Korea")
+    msi = make_league("Mid-Season Invitational", "MSI", "International")
+    worlds = make_league("World Championship", "WCS", "International")
+    first_stand = make_league("First Stand", "FST", "International")
+    ewc = make_league("Esports World Cup", "EWC", "International")
+
+    created = ensure_boosters()
+
+    assert {"Tous les splits", "EMEA 2025", "Corée 2026", "Riot International 2026",
+            "Esports World Cup 2026"} <= set(created)
+    riot = Booster.objects.get(slug="riot-international-2026")
+    assert set(riot.leagues.all()) == {msi, worlds, first_stand}
+    assert riot.cooldown_hours > 1 and riot.max_stock < 24
+    assert set(Booster.objects.get(slug="ewc-2026").leagues.all()) == {ewc}
+    assert set(Booster.objects.get(slug="korea-2026").leagues.all()) == {lck}
+    assert ensure_boosters() == []  # relançable
+
+
+def test_init_boosters_retires_the_old_international_booster(split):
+    from django.core.management import call_command
+
+    make_league("Esports World Cup", "EWC", "International")
+    old = Booster.objects.create(name="International 2026", slug="international-2026", auto=True)
+    by_hand = Booster.objects.create(name="Le mien", slug="le-mien")
+
+    call_command("init_boosters")
+
+    old.refresh_from_db()
+    by_hand.refresh_from_db()
+    assert not old.is_active and by_hand.is_active
+    assert Booster.objects.get(slug="ewc-2026").is_active
+
+
+def test_the_gestion_creates_the_booster_types(admin_client, split):
+    url = reverse("site:cards_booster_boosters-types")
+    assert admin_client.get(url).status_code == 200
+    response = admin_client.post(url, {"deactivate_obsolete": True}, content_type="application/json")
+    assert response.status_code == 200, response.content
+    assert Booster.objects.filter(slug="emea-2025").exists()
+
+
+def test_the_site_name_is_leaguegacha(client, split):
+    page = client.get(reverse("cards:home")).content.decode()
+    assert "League<b>Gacha</b>" in page and "Wiki LoL" not in page

@@ -10,7 +10,7 @@ cd "$(dirname "$0")/../.."
 SUDO=""; docker info >/dev/null 2>&1 || SUDO="sudo"
 COMPOSE=($SUDO docker compose -f compose.prod.yaml --env-file .env.prod)
 
-./deploy/raspberry/sauvegarde.sh || true
+bash ./deploy/raspberry/sauvegarde.sh || true
 "${COMPOSE[@]}" stop web worker caddy
 "${COMPOSE[@]}" exec -T db pg_restore -U wikilol -d wikilol --clean --if-exists --no-owner < "$DUMP"
 if [ -n "$FILES" ]; then

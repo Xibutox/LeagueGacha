@@ -1,4 +1,4 @@
-/* Wiki LoL Esport — habillage « régie de diffusion » : des bandeaux
+/* LeagueGacha — habillage « régie de diffusion » : des bandeaux
    inclinés comme les incrustations d'un match, le cyan hextech pour ce qui
    se joue (scores, boutons d'action), l'or pour le rang et l'ouverture. */
 :root {
@@ -141,7 +141,7 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .pack-stock b { font: 700 1.4rem/1 var(--display); }
 .pack-stock b.empty { color: var(--muted); }
 .pack-stock span { color: var(--muted); font-size: .85rem; text-align: right; }
-.meter { height: 4px; background: var(--steel); }
+.meter { height: 4px; background: var(--steel); overflow: hidden; }
 .meter span { display: block; height: 100%; background: var(--gold); }
 .pack-tile form .btn { width: 100%; }
 
@@ -388,3 +388,13 @@ table.ranking tr.me td { background: color-mix(in srgb, var(--hextech) 10%, tran
 .pc-text { padding: 6px 8px 8px; display: flex; flex-direction: column; }
 .pc-text b { font: 700 1.05rem/1.1 var(--display); }
 .pc-text small { color: var(--muted); font-size: .72rem; }
+
+/* --------------------------------------------------------- Cadeau de boosters */
+.gift { display: flex; gap: 16px; align-items: center; padding: 14px 20px; margin-bottom: 18px;
+  background: linear-gradient(100deg, color-mix(in srgb, var(--booster) 35%, var(--rift)), var(--rift) 70%);
+  border-left: 4px solid var(--gold); }
+.gift b { display: block; font: 700 1.3rem/1.1 var(--display); color: var(--gold); }
+.gift span { color: var(--text); font-size: .92rem; }
+.gift-icon { flex: none; width: 34px; height: 40px; background: var(--gold);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); animation: gift 1.6s ease-in-out 2; }
+@keyframes gift { 50% { transform: scale(1.15) rotate(8deg); } }
