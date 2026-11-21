@@ -110,12 +110,15 @@ sudo apt-get update
 if ! command -v docker >/dev/null; then
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y install \
 		docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-elif ! docker compose version >/dev/null 2>&1; then
-	echo "Docker est là, sans Compose : ajout de Compose et Buildx."
+elif ! sudo docker compose version >/dev/null 2>&1; then
+	# Le site est lancé avec sudo : Compose doit être installé pour tout le
+	# système, pas seulement dans ~/.docker de l'utilisateur.
+	echo "Docker est là, sans Compose pour tout le système : ajout de Compose et Buildx."
+	echo "  docker : $(command -v docker) ; plugins : $(ls /usr/libexec/docker/cli-plugins /usr/lib/docker/cli-plugins "$HOME/.docker/cli-plugins" 2>/dev/null | tr '\n' ' ')"
 	sudo DEBIAN_FRONTEND=noninteractive apt-get -y install docker-compose-plugin docker-buildx-plugin \
 		|| sudo DEBIAN_FRONTEND=noninteractive apt-get -y install docker-compose
 fi
-docker compose version || fail "Docker Compose reste introuvable."
+sudo docker compose version || fail "Docker Compose reste introuvable pour root (sudo docker compose)."
 sudo mkdir -p /etc/docker
 sudo tee /etc/docker/daemon.json >/dev/null <<'CONF'
 {
