@@ -782,3 +782,34 @@ def test_the_footer_shows_the_deployed_version(client, split, settings):
     assert "v1.2.3" in client.get(reverse("cards:home")).content.decode()
     settings.APP_VERSION = ""
     assert 'class="version"' not in client.get(reverse("cards:home")).content.decode()
+
+
+# --------------------------------------------------------------------- Prestige des ligues
+def test_the_same_games_rate_lower_in_a_regional_league(split):
+    from esport.importer import LeaguepediaImporter
+    from esport.models import League, PlayerSplitStats
+
+    lec = {s.player_id: s.score for s in PlayerSplitStats.objects.filter(split=split)}
+
+    League.objects.filter(pk=split.league_id).update(short_name="LFL", region="EMEA", level="Secondary")
+    split.league.refresh_from_db()
+    LeaguepediaImporter.compute_split_stats(split)
+    lfl = {s.player_id: s.score for s in PlayerSplitStats.objects.filter(split=split)}
+    assert all(lfl[p] < lec[p] for p in lec)
+
+    League.objects.filter(pk=split.league_id).update(prestige="1.10")
+    split.league.refresh_from_db()
+    LeaguepediaImporter.compute_split_stats(split)
+    strong = {s.player_id: s.score for s in PlayerSplitStats.objects.filter(split=split)}
+    assert all(strong[p] > lec[p] for p in lec if lec[p] > 0)
+
+
+def test_the_pack_announces_its_best_rarity(client, booster, bob):
+    client.force_login(bob)
+    response = client.post(reverse("cards:open_booster", args=[booster.slug]))
+    page = client.get(response["Location"])
+    best = page.context["best"]
+    html = page.content.decode()
+    assert f'data-best="{best.rarity.order}"' in html
+    assert f"--best: {best.rarity.color}" in html
+    assert 'class="pack-aura"' in html

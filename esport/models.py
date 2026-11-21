@@ -5,6 +5,9 @@ Hiérarchie :
     GameAppearance = une ligne de scoreboard (un joueur dans une partie)
     PlayerSplitStats = agrégat des GameAppearance d'un joueur sur un split
 """
+from decimal import Decimal
+
+from django.core.validators import MaxValueValidator, MinValueValidator
 from django.db import models
 from django.utils.text import slugify
 
@@ -17,6 +20,19 @@ class League(models.Model):
     region = models.CharField("région", max_length=100, blank=True)
     level = models.CharField("niveau", max_length=50, blank=True, help_text="Primary, Secondary…")
     is_official = models.BooleanField("officielle", default=False)
+    prestige = models.DecimalField(
+        "prestige",
+        max_digits=4,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        validators=[MinValueValidator(Decimal("0.5")), MaxValueValidator(Decimal("1.5"))],
+        help_text=(
+            "Multiplie la note de chaque partie jouée dans la ligue (1 = LEC). Vide : la valeur par "
+            "défaut (LCK, LPL 1,06 ; ligues régionales 0,88 à 0,92 ; international 1,06 à 1,10). "
+            "Après un changement : Splits › Recalculer stats et cartes."
+        ),
+    )
     synced_at = models.DateTimeField("synchronisée le", null=True, blank=True)
 
     class Meta:
@@ -26,6 +42,12 @@ class League(models.Model):
 
     def __str__(self):
         return self.short_name or self.name
+
+    @property
+    def effective_prestige(self) -> float:
+        from .prestige import league_prestige
+
+        return league_prestige(self)
 
 
 class Split(models.Model):

@@ -298,3 +298,21 @@ def test_the_imported_leagues_preset_filters(admin_client, split):
     )
     assert response.status_code == 200, response.content
     assert [row["short_name"] for row in response.json()["data"]] == ["LEC"]
+
+
+def test_scores_are_recomputed_once_when_the_rating_changes(split, settings, tmp_path):
+    from django.core.management import call_command
+
+    from esport.models import PlayerSplitStats
+    from esport.scoring import SCORING_VERSION
+
+    settings.MEDIA_ROOT = tmp_path
+    PlayerSplitStats.objects.update(score=0)
+
+    call_command("recompute_cards", "--si-besoin")
+    assert PlayerSplitStats.objects.exclude(score=0).exists()
+    assert (tmp_path / ".version-notes").read_text() == str(SCORING_VERSION)
+
+    PlayerSplitStats.objects.update(score=0)
+    call_command("recompute_cards", "--si-besoin")  # déjà à jour : rien
+    assert not PlayerSplitStats.objects.exclude(score=0).exists()

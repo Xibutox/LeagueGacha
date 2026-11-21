@@ -6,7 +6,12 @@
 <div class="opening" id="opening" data-animate="{{ animate|yesno:'1,0' }}" style="--booster: {{ opening.booster.color|default:'#3fd0e0' }}">
   <div class="opening-stage">
     {% if animate %}
-    <button type="button" class="pack{% if opening.booster.image %} has-image{% endif %}" id="pack" aria-label="Ouvrir le booster {{ opening.booster.name }}"{% if opening.booster.image %} style="--pack-image: url('{{ opening.booster.image.url }}')"{% endif %}>
+    <button type="button" class="pack{% if opening.booster.image %} has-image{% endif %}" id="pack"
+            aria-label="Ouvrir le booster {{ opening.booster.name }}"
+            data-best="{{ best.rarity.order|default:0 }}"
+            style="--best: {{ best.rarity.color|default:'#ffffff' }};{% if opening.booster.image %} --pack-image: url('{{ opening.booster.image.url }}');{% endif %}">
+      <span class="pack-aura" aria-hidden="true"></span>
+      <span class="pack-rays" aria-hidden="true"></span>
       <span class="pack-top"><span>Déchirer ici</span></span>
       <span class="pack-body">
         <b>{{ opening.booster.name }}</b>
@@ -14,7 +19,7 @@
       </span>
       <span class="pack-shine"></span>
     </button>
-    <p class="opening-hint" id="hint">Clique sur le booster pour l'ouvrir</p>
+    <p class="opening-hint" id="hint"><span class="hint-desktop">Clique</span><span class="hint-touch">Touche</span> le booster pour l'ouvrir</p>
     {% endif %}
 
     <div class="deal{% if not animate %} dealt{% endif %}" id="deal" {% if animate %}hidden{% endif %}>
@@ -71,4 +76,4 @@
 </div>
 <div class="opening-flash" id="flash"></div>
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/booster.js' %}?v=7"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/booster.js' %}?v=8"></script>{% endblock %}

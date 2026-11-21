@@ -290,5 +290,32 @@ class TeamScoringTests(unittest.TestCase):
         self.assertEqual(scoring.composition_score([80] * 5, 40), 70)
 
 
+class PrestigeTests(unittest.TestCase):
+    def test_defaults_follow_the_strength_of_leagues(self):
+        from esport.prestige import default_prestige
+
+        self.assertGreater(default_prestige("LCK"), default_prestige("LEC"))
+        self.assertGreater(default_prestige("LEC"), default_prestige("LFL"))
+        self.assertGreater(default_prestige("MSI", "International"), default_prestige("LCK"))
+        self.assertEqual(default_prestige("XYZ", "International"), 1.06)
+        self.assertEqual(default_prestige("XYZ", "Korea", "Secondary"), 0.88)
+
+    def test_a_league_can_override_its_prestige(self):
+        from decimal import Decimal
+        from types import SimpleNamespace
+
+        from esport.prestige import apply_prestige, league_prestige
+
+        league = SimpleNamespace(short_name="LFL", region="EMEA", level="Secondary", prestige=None)
+        self.assertEqual(league_prestige(league), 0.92)
+        league.prestige = Decimal("0.80")
+        self.assertEqual(league_prestige(league), 0.80)
+        self.assertEqual(apply_prestige(95, 1.1), 100.0)
+        self.assertEqual(apply_prestige(60, 0.9), 54.0)
+
+    def test_the_split_prior_is_the_league_average(self):
+        self.assertLess(scoring.split_rating([], prior_mean=46), scoring.split_rating([], prior_mean=50))
+
+
 if __name__ == "__main__":
     unittest.main()

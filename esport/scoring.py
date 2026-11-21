@@ -276,11 +276,16 @@ def game_rating(row: dict, ref: dict) -> tuple[float, dict]:
 #: LCK 2026, de ~15 pour le moins bon à ~80 pour le meilleur).
 SPLIT_STRETCH = 2.5
 
+#: La version du calcul des notes. À augmenter quand il change : au
+#: démarrage suivant, tout est recalculé (recompute_cards --si-besoin).
+#: 2 : prestige des ligues.
+SCORING_VERSION = 2
 
-def split_rating(game_scores: list[float], prior_games: int = PRIOR_GAMES) -> float:
-    """Moyenne bayésienne des parties (tirée vers 50 quand il y en a peu),
-    étirée autour de 50."""
-    mean = (sum(game_scores) + 50 * prior_games) / (len(game_scores) + prior_games)
+
+def split_rating(game_scores: list[float], prior_games: int = PRIOR_GAMES, prior_mean: float = 50.0) -> float:
+    """Moyenne bayésienne des parties (tirée vers prior_mean — le joueur
+    moyen de la ligue — quand il y en a peu), étirée autour de 50."""
+    mean = (sum(game_scores) + prior_mean * prior_games) / (len(game_scores) + prior_games)
     return round(max(0.0, min(100.0, 50 + SPLIT_STRETCH * (mean - 50))), 1)
 
 

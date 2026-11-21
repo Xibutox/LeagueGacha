@@ -48,7 +48,7 @@
 
     {% if card.stats %}
     {% with s=card.stats %}
-    <div class="strap"><h2>Note {{ s.score|floatformat:0 }} / 100</h2><p>50 = pro moyen du même poste, sur {{ s.games }} partie{{ s.games|pluralize }}.</p></div>
+    <div class="strap"><h2>Note {{ s.score|floatformat:0 }} / 100</h2><p>50 = pro moyen du même poste, sur {{ s.games }} partie{{ s.games|pluralize }} ; prestige {{ card.split.league }} × {{ card.split.league.effective_prestige|floatformat:2 }}.</p></div>
     {% if dimensions %}
     <div class="dims">
       {% for label, value in dimensions %}

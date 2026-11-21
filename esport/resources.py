@@ -78,8 +78,11 @@ class LeagueResource(ModelResource):
     description = _("Les ligues dont des tournois ont été importés.")
 
     list_display = (
-        "short_name", "name", "region", "level", "is_official", "imported", "split_count", "last_import",
+        "short_name", "name", "region", "level", "prestige", "prestige_effective", "is_official", "imported",
+        "split_count", "last_import",
     )
+    editable_fields = ("prestige",)
+    list_editable = True
     search_fields = ("short_name", "name", "region")
     ordering = ("short_name", "name")
     presets = {
@@ -127,6 +130,12 @@ class LeagueResource(ModelResource):
     )
     def split_count(self, league):
         return getattr(league, "splits_count", 0)
+
+    @display(description=_("Prestige appliqué"))
+    def prestige_effective(self, league):
+        value = league.effective_prestige
+        suffix = "" if league.prestige is not None else " (défaut)"
+        return f"× {value:.2f}{suffix}"
 
     @display(
         description=_("Importée"),

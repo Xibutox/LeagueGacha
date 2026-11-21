@@ -22,6 +22,7 @@ from django.utils.text import slugify
 
 from . import scoring
 from .leaguepedia import LeaguepediaClient, LeaguepediaError, chunked, in_clause, quote
+from .prestige import apply_prestige, league_prestige
 from .models import (
     GameAppearance,
     League,
@@ -484,11 +485,16 @@ class LeaguepediaImporter:
                 "team_gold", "team_damage", "game_length", "win", "role", "team_id", "champion",
             )]
         )
-        appearances = list(GameAppearance.objects.filter(tournament__split=split).order_by("played_at"))
+        appearances = list(
+            GameAppearance.objects.filter(tournament__split=split).select_related("tournament__league").order_by("played_at")
+        )
+        # Le prestige de la ligue : chaque partie compte plus en LCK qu'en ligue régionale.
+        split_prestige = league_prestige(split.league)
         by_player: dict[int, list[dict]] = defaultdict(list)
         for a in appearances:
             row = cls._row(a)
-            a.rating, row["zs"] = scoring.game_rating(row, reference)
+            raw, row["zs"] = scoring.game_rating(row, reference)
+            a.rating = apply_prestige(raw, league_prestige(a.tournament.league))
             row["rating"] = a.rating
             by_player[a.player_id].append(row)
         GameAppearance.objects.bulk_update(appearances, ["rating"], batch_size=500)
@@ -498,7 +504,7 @@ class LeaguepediaImporter:
             agg = scoring.aggregate_appearances(rows)
             agg["player_id"] = player_id
             agg["score"] = agg["rating"] = scoring.split_rating(
-                [r["rating"] for r in rows], settings.GAME_RATING_PRIOR_GAMES
+                [r["rating"] for r in rows], settings.GAME_RATING_PRIOR_GAMES, prior_mean=50 * split_prestige
             )
             agg["dimensions"] = scoring.dimension_scores([r["zs"] for r in rows])
             stats.append(agg)

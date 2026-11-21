@@ -66,11 +66,12 @@ services:
     security_opt:
       - no-new-privileges:true
 
-  # Migrations, fichiers statiques et boosters types, à chaque démarrage.
+  # Migrations, fichiers statiques, boosters types et, si le calcul des
+  # notes a changé, recalcul des notes : à chaque démarrage.
   migrate:
     <<: *app
     restart: "no"
-    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters && python manage.py recompute_cards --si-besoin"
 
   web:
     <<: *app

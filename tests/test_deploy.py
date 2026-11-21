@@ -56,6 +56,7 @@ def test_the_pi_waits_for_the_ci_job_it_names():
 def test_startup_creates_the_booster_types():
     migrate = compose()["services"]["migrate"]["command"]
     assert "migrate --noinput" in migrate and "init_boosters" in migrate
+    assert "recompute_cards --si-besoin" in migrate
 
 
 def test_the_server_scripts_are_executable_and_unix():

@@ -72,17 +72,26 @@
     if (allRevealed()) setTimeout(showSummary, reduced ? 0 : 700);
   }
 
+  // La rareté max du paquet se devine à l'ouverture : la lumière qui
+  // s'échappe en tremblant prend sa couleur, plus fort pour une épique,
+  // avec des rayons et une secousse de l'écran pour une légendaire.
   function openPack() {
     if (opened) return;
     opened = true;
     if (hint) hint.textContent = "";
-    pack.classList.add("shaking");
-    wait(700)
+    var best = parseInt(pack.getAttribute("data-best"), 10) || 0;
+    var bestColor = getComputedStyle(pack).getPropertyValue("--best").trim() || "#ffffff";
+    pack.classList.add("shaking", "charge-" + Math.min(best, 3));
+    wait(best >= 3 ? 1100 : 750)
       .then(function () {
         pack.classList.remove("shaking");
         pack.classList.add("torn");
-        flashOnce("#ffffff");
-        return wait(800);
+        flashOnce(best >= 1 ? bestColor : "#ffffff");
+        if (best >= 3) {
+          document.body.classList.add("quake");
+          setTimeout(function () { document.body.classList.remove("quake"); }, 600);
+        }
+        return wait(best >= 2 ? 1000 : 800);
       })
       .then(function () {
         pack.hidden = true;
@@ -90,6 +99,9 @@
         deal.hidden = false;
         void deal.offsetWidth;
         deal.classList.add("dealt");
+        if (deal.scrollIntoView && window.innerWidth < 700) {
+          deal.scrollIntoView({ behavior: reduced ? "auto" : "smooth", block: "start" });
+        }
         return wait(cards.length * 140 + 550);
       })
       .then(function () {
