@@ -18,6 +18,10 @@ from esport.scoring import COHERENCE_WEIGHT, DIMENSIONS, SLOT_PLAYER_WEIGHT, UNP
 from .models import COMPOSITIONS, ROLES, Booster, Card, CardChampion, PackOpening, Rarity, Roster, UserCard
 from .services import (
     booster_showcase,
+    ensure_daily_portal,
+    open_portal,
+    open_portals,
+    portal_status,
     GameError,
     best_rarities,
     booster_status,
@@ -67,7 +71,13 @@ def home(request):
     boosters = _with_status(request.user, boosters)
     for booster in boosters:
         booster.showcase = [] if booster.image else booster_showcase(booster)
-    context = {"boosters": boosters, "rarities": Rarity.objects.all()}
+    ensure_daily_portal()
+    portals = open_portals()
+    for portal in portals:
+        portal.showcase = [] if portal.booster.image else booster_showcase(portal.booster)
+        if request.user.is_authenticated:
+            portal.status = portal_status(request.user, portal)
+    context = {"boosters": boosters, "portals": portals, "rarities": Rarity.objects.all()}
     if request.user.is_authenticated:
         context["unlimited"] = any(b.status["unlimited"] for b in boosters)
         context["ready"] = sum(b.status["available"] for b in boosters)
@@ -86,6 +96,20 @@ def open_booster_view(request, slug):
     booster = get_object_or_404(Booster, slug=slug, is_active=True)
     try:
         opening = open_booster(request.user, booster)
+    except GameError as exc:
+        messages.error(request, str(exc))
+        return redirect("cards:home")
+    return redirect("cards:opening", pk=opening.pk)
+
+
+@login_required
+@require_POST
+def open_portal_view(request, pk):
+    from .models import Portal
+
+    portal = get_object_or_404(Portal.objects.select_related("booster"), pk=pk)
+    try:
+        opening = open_portal(request.user, portal)
     except GameError as exc:
         messages.error(request, str(exc))
         return redirect("cards:home")

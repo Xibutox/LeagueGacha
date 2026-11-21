@@ -441,3 +441,14 @@ table.ranking tr.me td { background: color-mix(in srgb, var(--hextech) 10%, tran
   .pack-stock { flex-direction: column; align-items: flex-start; gap: 2px; }
   .pack-stock span { text-align: left; font-size: .75rem; }
 }
+
+/* Portails : un liseré animé autour du paquet, et l'heure de fermeture au-dessus. */
+.portal-tile .pack-art { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--booster) 40%, #fff),
+  0 0 26px color-mix(in srgb, var(--booster) 55%, transparent); }
+.portal-tile .pack-art::after { display: block; top: auto; bottom: -30%; left: -30%; right: -30%; height: 60%;
+  transform: none; background: radial-gradient(ellipse at 50% 0, color-mix(in srgb, var(--booster) 60%, #fff 20%), transparent 65%);
+  opacity: .45; animation: portal-glow 3.6s ease-in-out infinite; }
+@keyframes portal-glow { 50% { opacity: .8; } }
+.portal-clock { margin: 0; font: 600 .85rem/1 var(--display); color: var(--gold, #e2b35a); }
+@media (prefers-reduced-motion: reduce) { .portal-tile .pack-art::after { animation: none; } }
+.pack-art > b, .pack-art > small { z-index: 1; }

@@ -909,3 +909,89 @@ def test_a_booster_without_visual_shows_its_players_in_legendary(client, booster
     html = page.content.decode()
     assert "data-showcase" in html and "showcase-rate" in html
     assert format_rate(1 / 480) == "0,0021 %" and format_rate(2.5) == "2,5 %"
+
+
+# --------------------------------------------------------------------- Portails
+@pytest.fixture
+def portal_booster(split):
+    return Booster.objects.create(name="EMEA 2025", years="2025", is_active=False, cards_per_pack=5)
+
+
+def test_the_daily_portal_rotates_between_inactive_boosters(split, portal_booster):
+    from cards.services import ensure_daily_portal
+
+    other = Booster.objects.create(name="Autre", is_active=False)
+    Booster.objects.create(name="Actif", is_active=True)
+    now = timezone.now()
+    first = ensure_daily_portal(now)
+    assert first.auto and first.booster in {portal_booster, other}
+    assert first.ends_at - first.starts_at == timedelta(hours=24)
+    assert first.starts_at <= now < first.ends_at
+    assert ensure_daily_portal(now) == first  # un seul par jour
+    second = ensure_daily_portal(now + timedelta(days=1))
+    assert second.booster != first.booster  # l'autre booster inactif
+
+
+def test_a_portal_gives_two_boosters_twelve_hours_apart(split, portal_booster, bob):
+    from cards.models import Portal
+    from cards.services import open_portal, portal_status
+
+    now = timezone.now()
+    portal = Portal.objects.create(booster=portal_booster, starts_at=now - timedelta(hours=1),
+                                   ends_at=now + timedelta(days=1))
+    assert portal_status(bob, portal, now)["available"]
+
+    opening = open_portal(bob, portal)
+    assert opening.portal == portal and opening.cards.count() == 5
+    status = portal_status(bob, portal)
+    assert not status["available"] and status["next_at"] == opening.opened_at + timedelta(hours=12)
+    with pytest.raises(GameError, match="pas encore prêt"):
+        open_portal(bob, portal)
+
+    later = opening.opened_at + timedelta(hours=12, minutes=1)
+    open_portal(bob, portal, now=later)
+    assert portal_status(bob, portal, later)["done"]
+    with pytest.raises(GameError, match="tout ce que"):
+        open_portal(bob, portal, now=later)
+    with pytest.raises(GameError, match="fermé"):
+        open_portal(bob, portal, now=portal.ends_at)
+
+
+def test_a_second_booster_that_would_come_after_closing_is_not_announced(split, portal_booster, bob):
+    from cards.models import PackOpening, Portal
+    from cards.services import portal_status
+
+    now = timezone.now()
+    portal = Portal.objects.create(booster=portal_booster, starts_at=now - timedelta(hours=20),
+                                   ends_at=now + timedelta(hours=4))
+    PackOpening.objects.create(user=bob, booster=portal_booster, portal=portal)
+    status = portal_status(bob, portal, now)
+    assert status["done"] and not status["available"]
+
+
+def test_a_manual_portal_lasts_one_to_thirty_days(portal_booster):
+    from django.core.exceptions import ValidationError
+
+    from cards.models import Portal
+
+    now = timezone.now()
+    Portal(booster=portal_booster, starts_at=now, ends_at=now + timedelta(days=30)).full_clean()
+    for days in (0.5, 31):
+        with pytest.raises(ValidationError):
+            Portal(booster=portal_booster, starts_at=now, ends_at=now + timedelta(days=days)).full_clean()
+
+
+def test_the_home_page_shows_the_portal_and_opens_it(client, portal_booster, bob):
+    client.force_login(bob)
+    page = client.get(reverse("cards:home"))
+    portal = page.context["portals"][0]
+    assert portal.booster == portal_booster and portal.status["available"]
+    assert "le premier est offert" in page.content.decode()
+    response = client.post(reverse("cards:open_portal", args=[portal.pk]))
+    assert response.status_code == 302 and "/ouverture/" in response["Location"]
+    html = client.get(reverse("cards:home")).content.decode()
+    assert "suivant dans" in html or "après la fermeture" in html
+
+
+def test_the_gestion_lists_portals(admin_client, portal_booster):
+    assert admin_client.get(reverse("site:cards_portal_list")).status_code == 200

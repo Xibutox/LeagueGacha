@@ -355,6 +355,67 @@ class UserCard(models.Model):
         return f"{self.user} — {self.card} ({self.rarity}) ×{self.quantity}"
 
 
+class Portal(models.Model):
+    """Un portail : un booster ouvrable pendant un temps limité, hors
+    réserve. Chaque joueur du site y ouvre au plus `max_openings` boosters :
+    le premier tout de suite, le suivant `wait_hours` après le précédent.
+
+    Le portail du jour (auto) dure 24 h et tourne entre les boosters
+    inactifs ; les autres se créent à la main dans la gestion (1 à 30 jours)."""
+
+    MIN_DAYS = 1
+    MAX_DAYS = 30
+
+    name = models.CharField("nom", max_length=100, blank=True, help_text="Vide : « Portail · nom du booster ».")
+    booster = models.ForeignKey(Booster, verbose_name="booster", on_delete=models.CASCADE, related_name="portals")
+    starts_at = models.DateTimeField("ouverture")
+    ends_at = models.DateTimeField("fermeture")
+    max_openings = models.PositiveSmallIntegerField(
+        "boosters par joueur", default=2, validators=[MinValueValidator(1), MaxValueValidator(20)]
+    )
+    wait_hours = models.DecimalField(
+        "attente entre deux boosters (heures)",
+        max_digits=6,
+        decimal_places=2,
+        default=Decimal("12"),
+        validators=[MinValueValidator(Decimal("0"))],
+        help_text="Le premier booster s'ouvre tout de suite ; le suivant, ce délai après le précédent.",
+    )
+    auto = models.BooleanField("portail du jour", default=False, help_text="Créé automatiquement chaque jour.")
+    is_active = models.BooleanField("actif", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "portail"
+        verbose_name_plural = "portails"
+        ordering = ["-starts_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["starts_at"], condition=models.Q(auto=True), name="one_daily_portal_per_day"
+            )
+        ]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def title(self) -> str:
+        return self.name or f"Portail · {self.booster.name}"
+
+    def clean(self):
+        from django.core.exceptions import ValidationError
+
+        if self.starts_at and self.ends_at:
+            if self.ends_at <= self.starts_at:
+                raise ValidationError({"ends_at": "La fermeture doit suivre l'ouverture."})
+            if not self.auto:
+                days = (self.ends_at - self.starts_at).total_seconds() / 86400
+                if days < self.MIN_DAYS - 1e-6 or days > self.MAX_DAYS + 1e-6:
+                    raise ValidationError(
+                        {"ends_at": f"Un portail dure de {self.MIN_DAYS} à {self.MAX_DAYS} jours."}
+                    )
+
+
 class PackOpening(models.Model):
     user = models.ForeignKey(
         settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="pack_openings"
@@ -363,6 +424,9 @@ class PackOpening(models.Model):
         Booster, verbose_name="booster", on_delete=models.SET_NULL, null=True, related_name="openings"
     )
     opened_at = models.DateTimeField("ouvert le", auto_now_add=True, db_index=True)
+    portal = models.ForeignKey(
+        Portal, verbose_name="portail", on_delete=models.SET_NULL, null=True, blank=True, related_name="openings"
+    )
 
     class Meta:
         verbose_name = "ouverture de booster"

@@ -7,6 +7,7 @@ app_name = "cards"
 urlpatterns = [
     path("", views.home, name="home"),
     path("booster/<slug:slug>/ouvrir/", views.open_booster_view, name="open_booster"),
+    path("portail/<int:pk>/ouvrir/", views.open_portal_view, name="open_portal"),
     path("ouverture/<int:pk>/", views.opening_detail, name="opening"),
     path("collection/", views.collection, name="collection"),
     path("carte/<int:pk>/", views.card_detail, name="card_detail"),

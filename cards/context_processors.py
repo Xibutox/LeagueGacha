@@ -12,13 +12,14 @@ def game(request):
     def ready():
         # Calculé seulement si le gabarit l'affiche.
         from .models import Booster
-        from .services import booster_status
+        from .services import booster_status, open_portals, portal_status
 
         boosters = [b for b in Booster.objects.filter(is_active=True) if b.card_pool().exists()]
         status = booster_status(user, boosters)
         if any(s["unlimited"] for s in status.values()):
             return "∞"
-        return sum(s["available"] for s in status.values())
+        portals = sum(portal_status(user, p)["available"] for p in open_portals())
+        return sum(s["available"] for s in status.values()) + portals
 
     context["packs_ready"] = ready
     return context

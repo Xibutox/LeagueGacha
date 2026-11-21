@@ -1,0 +1,19 @@
+{# Le visuel d'un paquet. Variables : booster, showcase (joueurs en vitrine), title (facultatif) #}
+<div class="pack-art{% if booster.image %} has-image{% elif showcase %} has-showcase{% endif %}"{% if booster.image %} style="--pack-image: url('{{ booster.image.url }}')"{% endif %}>
+  {% if showcase %}
+  <div class="showcase" data-showcase aria-label="Quelques joueurs de ce booster">
+    {% for item in showcase %}
+<figure class="showcase-card{% if forloop.first %} is-shown{% endif %}" style="--rarity: {{ item.rarity.color }}">
+  <div class="showcase-photo">
+    {% if item.card.image_url %}<img src="{{ item.card.image_url }}" alt="" loading="lazy">{% else %}<span class="nophoto">{{ item.card.player.ign|slice:":2" }}</span>{% endif %}
+    <span class="showcase-ovr">{{ item.card.overall }}</span>
+    <span class="showcase-rate" title="Chance de tirer ce joueur en {{ item.rarity.name|lower }}, par carte">{{ item.rate }}</span>
+  </div>
+  <figcaption><b>{{ item.card.player.ign }}</b><span>{{ item.rarity.name }} · {{ item.card.split.name }}</span></figcaption>
+</figure>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <b>{{ title|default:booster.name }}</b>
+  <small>{{ booster.cards_per_pack }} cartes{% if booster.guaranteed_rarity %} · dernière {{ booster.guaranteed_rarity.name|lower }} ou mieux{% endif %}</small>
+</div>

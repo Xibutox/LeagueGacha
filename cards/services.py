@@ -9,7 +9,7 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 from django.utils.text import slugify
@@ -641,15 +641,119 @@ def open_booster(user, booster: Booster, rng=None) -> PackOpening:
         if not cards:
             raise GameError("Ce booster ne contient encore aucune carte.")
         _take_pack(user, booster)
-        guaranteed = booster.guaranteed_rarity.order if booster.guaranteed_rarity else None
-        picks = draw.draw_pack(cards, rarity_rules(booster), booster.cards_per_pack,
-                               guaranteed_order=guaranteed, rng=rng)
-        opening = PackOpening.objects.create(user=user, booster=booster)
-        for slot, (rarity_id, card_id) in enumerate(picks, start=1):
-            was_new = add_copies(user, card_id, rarity_id)
-            PackOpeningCard.objects.create(
-                opening=opening, card_id=card_id, rarity_id=rarity_id, slot=slot, was_new=was_new
+        opening = _deal(user, booster, cards, rng)
+    refresh_rosters_of_user(user)
+    return opening
+
+
+def _deal(user, booster: Booster, cards: list[int], rng=None, portal=None) -> PackOpening:
+    """Tire les cartes d'un booster et les donne au joueur (dans une transaction)."""
+    guaranteed = booster.guaranteed_rarity.order if booster.guaranteed_rarity else None
+    picks = draw.draw_pack(cards, rarity_rules(booster), booster.cards_per_pack,
+                           guaranteed_order=guaranteed, rng=rng)
+    opening = PackOpening.objects.create(user=user, booster=booster, portal=portal)
+    for slot, (rarity_id, card_id) in enumerate(picks, start=1):
+        was_new = add_copies(user, card_id, rarity_id)
+        PackOpeningCard.objects.create(
+            opening=opening, card_id=card_id, rarity_id=rarity_id, slot=slot, was_new=was_new
+        )
+    return opening
+
+
+# --------------------------------------------------------------------- Portails
+DAILY_PORTAL_HOURS = 24
+DAILY_PORTAL_OPENINGS = 2
+DAILY_PORTAL_WAIT_HOURS = 12
+
+
+def ensure_daily_portal(now=None):
+    """Le portail du jour : de minuit à minuit (heure du site), sur un
+    booster inactif qui n'a pas eu de portail depuis le plus longtemps (au
+    hasard parmi les ex æquo). Créé à la première visite du jour. Aucun
+    booster inactif avec des cartes : pas de portail."""
+    from datetime import datetime, time as dtime
+
+    from .models import Portal
+
+    now = now or timezone.now()
+    today = timezone.localtime(now).date()
+    start = timezone.make_aware(datetime.combine(today, dtime.min))
+    existing = Portal.objects.filter(auto=True, starts_at=start).first()
+    if existing:
+        return existing
+    candidates = [b for b in Booster.objects.filter(is_active=False) if b.card_pool().exists()]
+    if not candidates:
+        return None
+    last = {}
+    for booster_id, starts_at in Portal.objects.filter(auto=True).values_list("booster_id", "starts_at"):
+        last[booster_id] = max(starts_at, last.get(booster_id, starts_at))
+    oldest = min(last.get(b.pk, start.replace(year=1970)) for b in candidates)
+    pool = [b for b in candidates if last.get(b.pk, start.replace(year=1970)) == oldest]
+    booster = random.Random(today.toordinal()).choice(sorted(pool, key=lambda b: b.pk))
+    try:
+        with transaction.atomic():
+            return Portal.objects.create(
+                booster=booster, auto=True, starts_at=start, ends_at=start + timedelta(hours=DAILY_PORTAL_HOURS),
+                max_openings=DAILY_PORTAL_OPENINGS, wait_hours=DAILY_PORTAL_WAIT_HOURS,
             )
+    except IntegrityError:  # créé au même instant par une autre requête
+        return Portal.objects.filter(auto=True, starts_at=start).first()
+
+
+def open_portals(now=None):
+    from .models import Portal
+
+    now = now or timezone.now()
+    return list(
+        Portal.objects.filter(is_active=True, starts_at__lte=now, ends_at__gt=now)
+        .select_related("booster", "booster__guaranteed_rarity")
+        .order_by("ends_at")
+    )
+
+
+def portal_status(user, portal, now=None) -> dict:
+    """{"used", "max", "available", "next_at", "done"} pour un joueur.
+    done : plus rien à ouvrir (tout ouvert, ou le prochain tomberait après
+    la fermeture)."""
+    now = now or timezone.now()
+    unlimited = bool(settings.GAME_STAFF_UNLIMITED and user.is_staff)
+    opened = list(
+        PackOpening.objects.filter(user=user, portal=portal).order_by("opened_at").values_list("opened_at", flat=True)
+    )
+    used = len(opened)
+    status = {"used": used, "max": portal.max_openings, "available": False, "next_at": None,
+              "done": False, "too_late": False, "unlimited": unlimited}
+    if unlimited:
+        status["available"] = True
+        return status
+    if used >= portal.max_openings:
+        status["done"] = True
+        return status
+    next_at = opened[-1] + timedelta(hours=float(portal.wait_hours)) if opened else portal.starts_at
+    if next_at >= portal.ends_at:
+        status["done"] = status["too_late"] = True
+    elif next_at <= now:
+        status["available"] = True
+    else:
+        status["next_at"] = next_at
+    return status
+
+
+def open_portal(user, portal, rng=None, now=None) -> PackOpening:
+    now = now or timezone.now()
+    if not portal.is_active or not (portal.starts_at <= now < portal.ends_at):
+        raise GameError("Ce portail est fermé.")
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().filter(pk=user.pk).first()
+        status = portal_status(user, portal, now)
+        if not status["available"]:
+            if status["done"]:
+                raise GameError("Tu as ouvert tout ce que ce portail propose.")
+            raise GameError("Le prochain booster de ce portail n'est pas encore prêt.")
+        cards = list(portal.booster.card_pool().values_list("id", flat=True))
+        if not cards:
+            raise GameError("Ce booster ne contient encore aucune carte.")
+        opening = _deal(user, portal.booster, cards, rng, portal=portal)
     refresh_rosters_of_user(user)
     return opening
 

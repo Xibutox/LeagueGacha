@@ -38,29 +38,41 @@
   </div>
 </section>
 
+{% if portals %}
+<div class="strap"><h2 id="portails">Portails</h2></div>
+<div class="shelf portals">
+  {% for portal in portals %}
+    {% with s=portal.status %}
+    <article class="pack-tile portal-tile{% if s.available %} is-ready{% endif %}" style="--booster: {{ portal.booster.color }}">
+      <p class="portal-clock">Ferme dans <time data-countdown data-reload datetime="{{ portal.ends_at|date:'c' }}"></time></p>
+      {% include "cards/_pack_art.html" with booster=portal.booster showcase=portal.showcase title=portal.title %}
+      {% if s %}
+        <div class="pack-stock">
+          {% if s.unlimited %}
+            <b>∞</b><span>illimité (compte staff)</span>
+          {% else %}
+            <b title="Boosters ouverts sur ce portail">{{ s.used }}<small class="muted"> / {{ s.max }}</small></b>
+            <span>{% if s.available %}{% if s.used %}le suivant est prêt{% else %}le premier est offert{% endif %}{% elif s.next_at %}suivant dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% elif s.too_late %}le suivant tomberait après la fermeture{% else %}terminé pour toi{% endif %}</span>
+          {% endif %}
+        </div>
+        <form method="post" action="{% url 'cards:open_portal' portal.pk %}">{% csrf_token %}
+          <button class="btn {% if s.available %}btn-gold{% else %}btn-ghost{% endif %}" type="submit" {% if not s.available %}disabled{% endif %}>Ouvrir</button>
+        </form>
+      {% else %}
+        <p class="small muted">{{ portal.max_openings }} booster{{ portal.max_openings|pluralize }} par joueur, le premier tout de suite.</p>
+      {% endif %}
+    </article>
+    {% endwith %}
+  {% endfor %}
+</div>
+{% endif %}
+
 <div class="strap"><h2 id="boosters">Boosters</h2></div>
 <div class="shelf">
   {% for booster in boosters %}
     {% with s=booster.status %}
     <article class="pack-tile{% if s and s.available or s and s.unlimited %} is-ready{% endif %}" style="--booster: {{ booster.color }}">
-      <div class="pack-art{% if booster.image %} has-image{% elif booster.showcase %} has-showcase{% endif %}"{% if booster.image %} style="--pack-image: url('{{ booster.image.url }}')"{% endif %}>
-        {% if booster.showcase %}
-        <div class="showcase" data-showcase aria-label="Quelques joueurs de ce booster">
-          {% for item in booster.showcase %}
-            <figure class="showcase-card{% if forloop.first %} is-shown{% endif %}" style="--rarity: {{ item.rarity.color }}">
-              <div class="showcase-photo">
-                {% if item.card.image_url %}<img src="{{ item.card.image_url }}" alt="" loading="lazy">{% else %}<span class="nophoto">{{ item.card.player.ign|slice:":2" }}</span>{% endif %}
-                <span class="showcase-ovr">{{ item.card.overall }}</span>
-                <span class="showcase-rate" title="Chance de tirer ce joueur en {{ item.rarity.name|lower }}, par carte">{{ item.rate }}</span>
-              </div>
-              <figcaption><b>{{ item.card.player.ign }}</b><span>{{ item.rarity.name }} · {{ item.card.split.name }}</span></figcaption>
-            </figure>
-          {% endfor %}
-        </div>
-        {% endif %}
-        <b>{{ booster.name }}</b>
-        <small>{{ booster.cards_per_pack }} cartes{% if booster.guaranteed_rarity %} · dernière {{ booster.guaranteed_rarity.name|lower }} ou mieux{% endif %}</small>
-      </div>
+      {% include "cards/_pack_art.html" with booster=booster showcase=booster.showcase %}
       {% if s %}
         <div class="pack-stock">
           {% if s.unlimited %}

@@ -1,6 +1,8 @@
 """Chaque page et chaque endpoint de la gestion, ouverts trois fois
 (superutilisateur, sans permission, déconnecté) : generic.testing."""
 
+from datetime import timedelta
+
 import pytest
 
 from cards.models import (
@@ -11,6 +13,7 @@ from cards.models import (
     Card,
     PackOpening,
     PackOpeningCard,
+    Portal,
     Rarity,
     UserCard,
 )
@@ -62,6 +65,8 @@ class TestEveryPage(PageSweep):
             "cards.rosterslot": roster.slots.first(),
             "cards.rosterpick": roster.slots.first().picks.first(),
             "cards.boostergift": BoosterGift.objects.create(user=admin_user, booster=booster, quantity=2),
+            "cards.portal": Portal.objects.create(
+                booster=booster, starts_at=opening.opened_at, ends_at=opening.opened_at + timedelta(days=1)),
             "cards.boosterstock": BoosterStock.objects.get_or_create(
                 user=admin_user, booster=booster, defaults={"refilled_at": opening.opened_at})[0],
         }
@@ -78,6 +83,7 @@ class TestEveryPage(PageSweep):
         # Fusionner, échanger, l'aperçu d'une équipe : en POST.
         "cards:fuse": (405,),
         "cards:exchange": (405,),
+        "cards:open_portal": (405,),
         "cards:roster_preview": (405,),
         # Ouvrir un booster se fait en POST, se déconnecter aussi.
         "cards:open_booster": (405,),
@@ -97,6 +103,8 @@ class TestEveryPage(PageSweep):
             return records["cards.booster"].slug
         if url_name == "cards:opening":
             return records["cards.packopening"].pk
+        if url_name == "cards:open_portal":
+            return records["cards.portal"].pk
         if url_name in {"cards:card_detail", "cards:fuse", "cards:exchange"}:
             return records["cards.card"].pk
         if url_name in {"cards:roster_edit", "cards:roster_delete"}:

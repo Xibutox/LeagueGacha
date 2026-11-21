@@ -25,6 +25,7 @@ from generic.sites import (
 
 from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
+    Portal,
     Booster,
     BoosterGift,
     BoosterRarityWeight,
@@ -667,3 +668,28 @@ class BoosterGiftResource(ModelResource):
 
     def has_add_permission(self, request):
         return False
+
+
+@register(Portal)
+class PortalResource(ModelResource):
+    icon = "auto_awesome_motion"
+    group = GAME
+    order = 3
+    label_plural = _("portails")
+    description = _(
+        "Un booster ouvrable pendant un temps limité, hors réserve : chaque joueur "
+        "y ouvre quelques boosters (le premier tout de suite, les suivants après "
+        "une attente). Le portail du jour (24 h) se crée tout seul et tourne entre "
+        "les boosters inactifs ; crée ici des portails de 1 à 30 jours."
+    )
+
+    list_display = ("title", "booster", "starts_at", "ends_at", "max_openings", "wait_hours", "auto", "is_active")
+    list_select_related = ("booster",)
+    search_fields = ("name", "booster__name")
+    list_filter = ("auto", "is_active")
+    ordering = ("-starts_at",)
+    fields = (("name", "booster"), ("starts_at", "ends_at"), ("max_openings", "wait_hours"), "is_active")
+
+    @display(description=_("Portail"))
+    def title(self, obj):
+        return obj.title
