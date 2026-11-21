@@ -189,9 +189,11 @@ body.quake .opening-stage { animation: quake .5s cubic-bezier(.36,.07,.19,.97); 
 @keyframes quake { 20%, 60% { transform: translate(-6px, 3px); } 40%, 80% { transform: translate(6px, -3px); } }
 
 /* Face cachée : un liseré discret de la couleur de la rareté. */
-.flip-back::after { content: ""; position: absolute; inset: 0; pointer-events: none; clip-path: inherit;
-  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rarity-color) 55%, transparent),
-              inset 0 0 14px color-mix(in srgb, var(--rarity-color) 25%, transparent); }
+.flip-back { box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--rarity-color) 55%, transparent),
+                         inset 0 0 14px color-mix(in srgb, var(--rarity-color) 25%, transparent); }
+/* Une fois retournée, le dos disparaît vraiment (certains navigateurs
+   laissent sinon passer son liseré par-dessus la face). */
+.flip.revealed .flip-back { visibility: hidden; transition: visibility 0s .35s; }
 
 /* Le tactile : le texte de l'indication, et la carte qui se soulève au toucher. */
 .hint-touch { display: none; }
