@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Échange — LeagueGacha{% endblock %}
+{% block content %}
+<div class="strap"><h1>{% if offer.chosen %}Échange fait{% else %}Choisis ta carte {{ offer.rarity.name|lower }}{% endif %}</h1></div>
+<p class="muted">
+  {% if offer.chosen %}
+    Tu as pris {{ offer.chosen.player.ign }} en {{ offer.rarity.name|lower }}, contre ton doublon {{ offer.given_rarity.name|lower }} {{ offer.given_card.player.ign }}.
+  {% else %}
+    Ton doublon {{ offer.given_rarity.name|lower }} {{ offer.given_card.player.ign }} est échangé. Prends un de ces {{ choices|length }} joueurs, tirés au hasard parmi toutes les cartes : il rejoint ta collection en {{ offer.rarity.name|lower }}. Le tirage est fixé, tu peux revenir choisir plus tard.
+  {% endif %}
+</p>
+<div class="exchange-grid">
+  {% for card in choices %}
+    <form method="post" action="{% url 'cards:choose_exchange' offer.pk %}" class="exchange-choice{% if offer.chosen_id == card.pk %} is-chosen{% elif offer.chosen %} is-dimmed{% endif %}">{% csrf_token %}
+      <input type="hidden" name="card" value="{{ card.pk }}">
+      {% include "cards/_card.html" with card=card rarity=offer.rarity %}
+      <p class="small muted">{% if card.owned %}Déjà {{ card.owned }} exemplaire{{ card.owned|pluralize }} à toi{% else %}Nouveau joueur pour toi{% endif %}</p>
+      {% if not offer.chosen %}<button class="btn btn-gold" type="submit">Prendre {{ card.player.ign }}</button>{% endif %}
+    </form>
+  {% endfor %}
+</div>
+{% endblock %}

@@ -452,3 +452,21 @@ table.ranking tr.me td { background: color-mix(in srgb, var(--hextech) 10%, tran
 .portal-clock { margin: 0; font: 600 .85rem/1 var(--display); color: var(--gold, #e2b35a); }
 @media (prefers-reduced-motion: reduce) { .portal-tile .pack-art::after { animation: none; } }
 .pack-art > b, .pack-art > small { z-index: 1; }
+
+/* Échange de doublon : 5 cartes au choix. */
+a.gift { color: inherit; text-decoration: none; }
+.exchange-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 22px 18px; margin-top: 22px; }
+.exchange-choice { display: flex; flex-direction: column; gap: 8px; margin: 0; }
+.exchange-choice p { margin: 0; text-align: center; }
+.exchange-choice .btn { width: 100%; }
+.exchange-choice.is-dimmed { opacity: .4; }
+.exchange-choice.is-chosen .lcard { outline: 3px solid var(--gold, #e2b35a); outline-offset: 4px; }
+@media (max-width: 640px) {
+  .exchange-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px 10px; }
+  .exchange-choice .btn { font-size: .85rem; padding-left: 4px; padding-right: 4px; }
+  .exchange-choice .lcard { padding: 7px; }
+  .exchange-choice .lcard-name { font-size: 1.1rem; }
+  .exchange-choice .ovr { font-size: 1.35rem; }
+  .exchange-choice .lcard-stats b { font-size: .85rem; }
+  .exchange-choice .lcard-meta { font-size: .62rem; }
+}

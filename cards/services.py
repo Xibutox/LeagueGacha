@@ -479,20 +479,64 @@ def fuse(user, card_id: int, rarity_id: int) -> Rarity:
     return target
 
 
-def exchange(user, card_id: int, rarity_id: int, target_card_id: int) -> Rarity:
-    """Échange un doublon (« un doublon de légendaire ») contre le joueur de
-    son choix, à la rareté d'échange. L'exemplaire d'origine est gardé."""
+def exchange(user, card_id: int, rarity_id: int, rng=None):
+    """Échange un doublon (« un doublon de légendaire ») : il est donné, et
+    le joueur reçoit une proposition de ExchangeOffer.CHOICES cartes tirées
+    au hasard parmi toutes les cartes jouables (des joueurs différents), à
+    choisir ensuite (choose_exchange) à la rareté d'échange. L'exemplaire
+    d'origine est gardé. Renvoie la proposition."""
+    from .models import ExchangeOffer
+
+    rng = rng or random
     rarity = Rarity.objects.select_related("exchange_rarity").get(pk=rarity_id)
     if not rarity.exchange_cost or rarity.exchange_rarity is None:
         raise GameError(f"Les doublons {rarity.name.lower()}s ne s'échangent pas.")
-    target = Card.objects.filter(pk=target_card_id, is_active=True, split__is_playable=True).first()
-    if target is None:
-        raise GameError("Cette carte n'est pas disponible.")
+    pool = list(_exchangeable_cards().values_list("pk", "player_id"))
+    by_player: dict[int, list[int]] = {}
+    for pk, player_id in pool:
+        by_player.setdefault(player_id, []).append(pk)
+    if not by_player:
+        raise GameError("Aucune carte à proposer pour l'instant.")
+    players = rng.sample(sorted(by_player), min(ExchangeOffer.CHOICES, len(by_player)))
+    picked = [rng.choice(by_player[p]) for p in players]
     with transaction.atomic():
         _take_copies(user, card_id, rarity, rarity.exchange_cost, keep=1)
-        add_copies(user, target.pk, rarity.exchange_rarity_id)
+        offer = ExchangeOffer.objects.create(
+            user=user, given_card_id=card_id, given_rarity=rarity, rarity=rarity.exchange_rarity
+        )
+        offer.choices.set(picked)
+    return offer
+
+
+def _exchangeable_cards():
+    return Card.objects.filter(is_active=True, split__is_playable=True)
+
+
+def pending_exchanges(user):
+    from .models import ExchangeOffer
+
+    return ExchangeOffer.objects.filter(user=user, chosen__isnull=True).select_related("rarity", "given_card__player")
+
+
+def choose_exchange(user, offer_id: int, card_id: int):
+    """Le joueur prend une des cartes proposées. Renvoie (carte, rareté)."""
+    from .models import ExchangeOffer
+
+    with transaction.atomic():
+        offer = ExchangeOffer.objects.select_for_update().filter(pk=offer_id, user=user).first()
+        if offer is None:
+            raise GameError("Cet échange n'existe pas.")
+        if offer.chosen_id:
+            raise GameError("Tu as déjà choisi ta carte pour cet échange.")
+        card = offer.choices.filter(pk=card_id).first()
+        if card is None:
+            raise GameError("Choisis une des cartes proposées.")
+        add_copies(user, card.pk, offer.rarity_id)
+        offer.chosen = card
+        offer.chosen_at = timezone.now()
+        offer.save(update_fields=["chosen", "chosen_at"])
     refresh_rosters_of_user(user)
-    return rarity.exchange_rarity
+    return card, offer.rarity
 
 
 # --------------------------------------------------------------------- Boosters
@@ -598,7 +642,7 @@ def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
     réserves de boosters (ils retrouvent le stock de départ à leur prochaine
     visite). keep_gifts garde les boosters offerts encore à ouvrir.
     Renvoie le nombre de lignes supprimées par catégorie."""
-    from .models import PackOpening, Roster
+    from .models import ExchangeOffer, PackOpening, Roster
 
     users = list(users)
     counts = {
@@ -609,6 +653,7 @@ def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
         UserCard.objects.filter(user__in=users).delete()
         counts["openings"] = PackOpening.objects.filter(user__in=users).delete()[1].get("cards.PackOpening", 0)
         counts["rosters"] = Roster.objects.filter(user__in=users).delete()[1].get("cards.Roster", 0)
+        ExchangeOffer.objects.filter(user__in=users).delete()
         stocks = BoosterStock.objects.filter(user__in=users)
         if keep_gifts:
             stocks.filter(bonus=0).delete()

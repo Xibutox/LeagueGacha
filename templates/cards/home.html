@@ -11,6 +11,15 @@
     </div>
   </div>
 {% endfor %}
+{% for offer in exchanges %}
+  <a class="gift exchange-pending" href="{% url 'cards:exchange_offer' offer.pk %}" style="--booster: {{ offer.rarity.color }}">
+    <span class="gift-icon" aria-hidden="true"></span>
+    <div>
+      <b>Échange en attente : choisis ta carte {{ offer.rarity.name|lower }}</b>
+      <span>Contre ton doublon {{ offer.given_card.player.ign }} — 5 joueurs t'attendent</span>
+    </div>
+  </a>
+{% endfor %}
 <section class="lobby">
   <div>
     {% if user.is_authenticated %}

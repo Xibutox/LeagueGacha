@@ -28,18 +28,10 @@
             {% if step.can_exchange %}
               <form method="post" action="{% url 'cards:exchange' card.pk %}" class="inline">{% csrf_token %}
                 <input type="hidden" name="rarity" value="{{ step.rarity.pk }}">
-                <select name="target" required aria-label="Joueur à recevoir">
-                  <option value="">Choisis un joueur…</option>
-                  {% for split, options in exchange_choices.items %}
-                    <optgroup label="{{ split }}">
-                      {% for c in options %}<option value="{{ c.pk }}">{{ c.player.ign }} · {{ c.role }} · {{ c.overall }}</option>{% endfor %}
-                    </optgroup>
-                  {% endfor %}
-                </select>
-                <button class="btn btn-small btn-gold" type="submit">Échanger {{ step.rarity.exchange_cost }} doublon{{ step.rarity.exchange_cost|pluralize }} → 1 {{ step.rarity.exchange_rarity.name|lower }}</button>
+                <button class="btn btn-small btn-gold" type="submit">Échanger {{ step.rarity.exchange_cost }} doublon{{ step.rarity.exchange_cost|pluralize }} → 1 {{ step.rarity.exchange_rarity.name|lower }} au choix parmi 5</button>
               </form>
             {% elif step.rarity.exchange_cost and step.rarity.exchange_rarity %}
-              <span class="small muted">Un doublon s'échange contre le joueur de ton choix en {{ step.rarity.exchange_rarity.name|lower }}</span>
+              <span class="small muted">Un doublon s'échange contre 1 {{ step.rarity.exchange_rarity.name|lower }} à choisir parmi 5 joueurs tirés au hasard</span>
             {% endif %}
           </div>
         </div>

@@ -591,3 +591,34 @@ class CardChampion(models.Model):
     @property
     def win_rate(self) -> float:
         return round(100 * self.wins / self.games, 1) if self.games else 0.0
+
+
+class ExchangeOffer(models.Model):
+    """Un échange de doublon en cours : le doublon est déjà donné, le joueur
+    choisit une carte parmi celles tirées au hasard (gardées ici : recharger
+    la page ne relance pas le tirage)."""
+
+    CHOICES = 5
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="exchange_offers"
+    )
+    given_card = models.ForeignKey(
+        Card, verbose_name="carte donnée", on_delete=models.SET_NULL, null=True, related_name="+"
+    )
+    given_rarity = models.ForeignKey(Rarity, verbose_name="rareté donnée", on_delete=models.PROTECT, related_name="+")
+    rarity = models.ForeignKey(Rarity, verbose_name="rareté reçue", on_delete=models.PROTECT, related_name="+")
+    choices = models.ManyToManyField(Card, verbose_name="cartes proposées", related_name="+")
+    chosen = models.ForeignKey(
+        Card, verbose_name="carte choisie", on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+    created_at = models.DateTimeField("proposé le", auto_now_add=True)
+    chosen_at = models.DateTimeField("choisi le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "échange de doublon"
+        verbose_name_plural = "échanges de doublons"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.user} — {self.given_card} ({self.created_at:%d/%m/%Y %H:%M})"

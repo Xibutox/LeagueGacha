@@ -10,6 +10,7 @@ from cards.models import (
     BoosterGift,
     BoosterRarityWeight,
     BoosterStock,
+    ExchangeOffer,
     Card,
     PackOpening,
     PackOpeningCard,
@@ -65,6 +66,8 @@ class TestEveryPage(PageSweep):
             "cards.rosterslot": roster.slots.first(),
             "cards.rosterpick": roster.slots.first().picks.first(),
             "cards.boostergift": BoosterGift.objects.create(user=admin_user, booster=booster, quantity=2),
+            "cards.exchangeoffer": ExchangeOffer.objects.create(
+                user=admin_user, given_card=card, given_rarity=Rarity.objects.last(), rarity=Rarity.objects.first()),
             "cards.portal": Portal.objects.create(
                 booster=booster, starts_at=opening.opened_at, ends_at=opening.opened_at + timedelta(days=1)),
             "cards.boosterstock": BoosterStock.objects.get_or_create(
@@ -84,6 +87,8 @@ class TestEveryPage(PageSweep):
         "cards:fuse": (405,),
         "cards:exchange": (405,),
         "cards:open_portal": (405,),
+        "cards:choose_exchange": (405,),
+        "site:cards_exchangeoffer_add": (403,),
         "cards:roster_preview": (405,),
         # Ouvrir un booster se fait en POST, se déconnecter aussi.
         "cards:open_booster": (405,),
@@ -92,6 +97,7 @@ class TestEveryPage(PageSweep):
         "signup": (302,),
         # Une ouverture n'est visible que de celui qui l'a faite.
         "cards:opening": (404,),
+        "cards:exchange_offer": (404,),
         # Une équipe n'est visible que de son propriétaire ; supprimer = POST.
         "cards:roster_edit": (404,),
         "cards:roster_delete": (405,),
@@ -103,6 +109,8 @@ class TestEveryPage(PageSweep):
             return records["cards.booster"].slug
         if url_name == "cards:opening":
             return records["cards.packopening"].pk
+        if url_name in {"cards:exchange_offer", "cards:choose_exchange"}:
+            return records["cards.exchangeoffer"].pk
         if url_name == "cards:open_portal":
             return records["cards.portal"].pk
         if url_name in {"cards:card_detail", "cards:fuse", "cards:exchange"}:

@@ -171,33 +171,56 @@ def test_the_top_rarity_does_not_fuse(split, bob):
         fuse(bob, card.pk, rarity("legendaire").pk)
 
 
-def test_a_legendary_duplicate_trades_for_any_player_in_rare(split, bob):
-    card, target = Card.objects.all()[:2]
+def test_a_legendary_duplicate_trades_for_a_rare_among_five_drawn_players(split, bob):
+    from cards.services import choose_exchange, pending_exchanges
+
+    card = Card.objects.first()
     give(bob, card, "legendaire", 2)
 
-    assert exchange(bob, card.pk, rarity("legendaire").pk, target.pk) == rarity("rare")
-
+    offer = exchange(bob, card.pk, rarity("legendaire").pk)
+    choices = list(offer.choices.all())
+    assert len(choices) == 5 and len({c.player_id for c in choices}) == 5
+    assert offer.rarity == rarity("rare") and list(pending_exchanges(bob)) == [offer]
     assert UserCard.objects.get(user=bob, card=card, rarity__code="legendaire").quantity == 1
-    assert UserCard.objects.get(user=bob, card=target, rarity__code="rare").quantity == 1
     with pytest.raises(GameError):  # le dernier exemplaire reste
-        exchange(bob, card.pk, rarity("legendaire").pk, target.pk)
+        exchange(bob, card.pk, rarity("legendaire").pk)
+
+    outsider = Card.objects.exclude(pk__in=[c.pk for c in choices]).first()
+    with pytest.raises(GameError, match="proposées"):
+        choose_exchange(bob, offer.pk, outsider.pk)
+    target = choices[2]
+    assert choose_exchange(bob, offer.pk, target.pk) == (target, rarity("rare"))
+    assert UserCard.objects.get(user=bob, card=target, rarity__code="rare").quantity == 1
+    with pytest.raises(GameError, match="déjà choisi"):
+        choose_exchange(bob, offer.pk, choices[0].pk)
+    assert not pending_exchanges(bob).exists()
 
 
 def test_fusion_and_exchange_from_the_card_page(client, split, bob):
-    card, target = Card.objects.all()[:2]
+    card = Card.objects.first()
     give(bob, card, "commune", 2)
     give(bob, card, "legendaire", 2)
     client.force_login(bob)
 
     page = client.get(reverse("cards:card_detail", args=[card.pk])).content.decode()
-    assert "Fusionner 2 → 1 rare" in page and "Échanger 1 doublon" in page
+    assert "Fusionner 2 → 1 rare" in page and "au choix parmi 5" in page
 
     client.post(reverse("cards:fuse", args=[card.pk]), {"rarity": rarity("commune").pk})
-    response = client.post(reverse("cards:exchange", args=[card.pk]),
-                           {"rarity": rarity("legendaire").pk, "target": target.pk})
-    assert response.status_code == 302
     assert UserCard.objects.filter(user=bob, card=card, rarity__code="rare").exists()
+    response = client.post(reverse("cards:exchange", args=[card.pk]), {"rarity": rarity("legendaire").pk})
+    assert response.status_code == 302 and "/echange/" in response["Location"]
+
+    offer_page = client.get(response["Location"])
+    assert len(offer_page.context["choices"]) == 5
+    assert "Échange en attente" in client.get(reverse("cards:home")).content.decode()
+    # Recharger ne relance pas le tirage.
+    assert offer_page.context["choices"] == client.get(response["Location"]).context["choices"]
+
+    target = offer_page.context["choices"][0]
+    choose_url = reverse("cards:choose_exchange", args=[offer_page.context["offer"].pk])
+    assert client.post(choose_url, {"card": target.pk}).status_code == 302
     assert UserCard.objects.filter(user=bob, card=target, rarity__code="rare").exists()
+    assert "Échange fait" in client.get(response["Location"]).content.decode()
 
 
 # --------------------------------------------------------------------- Pages

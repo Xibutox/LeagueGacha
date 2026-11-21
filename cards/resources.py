@@ -25,6 +25,7 @@ from generic.sites import (
 
 from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
+    ExchangeOffer,
     Portal,
     Booster,
     BoosterGift,
@@ -693,3 +694,25 @@ class PortalResource(ModelResource):
     @display(description=_("Portail"))
     def title(self, obj):
         return obj.title
+
+
+@register(ExchangeOffer)
+class ExchangeOfferResource(ModelResource):
+    icon = "swap_horiz"
+    group = PLAYERS
+    order = 5
+    label_plural = _("échanges de doublons")
+    description = _("Les doublons échangés et les 5 cartes proposées à chaque fois.")
+    history = False
+
+    list_display = ("created_at", "user", "given_card", "given_rarity", "rarity", "chosen", "chosen_at")
+    list_select_related = (
+        "user", "given_card__player", "given_card__split", "given_rarity", "rarity", "chosen__player", "chosen__split",
+    )
+    search_fields = ("user__username", "given_card__player__ign", "chosen__player__ign")
+    ordering = ("-created_at",)
+    fields = (("user", "created_at"), ("given_card", "given_rarity"), ("rarity", "chosen", "chosen_at"), "choices")
+    readonly_fields = ("user", "created_at", "given_card", "given_rarity", "rarity", "chosen", "chosen_at", "choices")
+
+    def has_add_permission(self, request):
+        return False

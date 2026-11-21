@@ -18,6 +18,8 @@ from esport.scoring import COHERENCE_WEIGHT, DIMENSIONS, SLOT_PLAYER_WEIGHT, UNP
 from .models import COMPOSITIONS, ROLES, Booster, Card, CardChampion, PackOpening, Rarity, Roster, UserCard
 from .services import (
     booster_showcase,
+    choose_exchange,
+    pending_exchanges,
     ensure_daily_portal,
     open_portal,
     open_portals,
@@ -78,6 +80,8 @@ def home(request):
         if request.user.is_authenticated:
             portal.status = portal_status(request.user, portal)
     context = {"boosters": boosters, "portals": portals, "rarities": Rarity.objects.all()}
+    if request.user.is_authenticated:
+        context["exchanges"] = list(pending_exchanges(request.user))
     if request.user.is_authenticated:
         context["unlimited"] = any(b.status["unlimited"] for b in boosters)
         context["ready"] = sum(b.status["available"] for b in boosters)
@@ -231,11 +235,6 @@ def card_detail(request, pk):
             "can_fuse": bool(rarity.fusion_cost and target and quantity >= rarity.fusion_cost),
             "can_exchange": bool(rarity.exchange_cost and rarity.exchange_rarity and quantity >= rarity.exchange_cost + 1),
         })
-    exchange_choices = None
-    if any(step["can_exchange"] for step in ladder):
-        exchange_choices = {}
-        for c in _playable_cards().select_related("player", "split").order_by("split__name", "role", "player__ign"):
-            exchange_choices.setdefault(c.split.name, []).append(c)
     best = copies[-1][0] if copies else None
     champions = card.champions.select_related("champion").order_by("-games", "-history_games", "-rating")
     dims = card.stats.dimensions if card.stats else {}
@@ -243,7 +242,7 @@ def card_detail(request, pk):
     return render(
         request,
         "cards/card_detail.html",
-        {"card": card, "copies": copies, "best": best, "ladder": ladder, "exchange_choices": exchange_choices,
+        {"card": card, "copies": copies, "best": best, "ladder": ladder,
          "other_cards": card.player.cards.exclude(pk=card.pk).select_related("split"),
          "dimensions": dimensions, "champions": champions},
     )
@@ -267,14 +266,38 @@ def fuse_view(request, pk):
 def exchange_view(request, pk):
     card = get_object_or_404(Card, pk=pk)
     try:
-        target_id = int(request.POST.get("target", 0))
-        rarity = exchange(request.user, card.pk, int(request.POST.get("rarity", 0)), target_id)
+        offer = exchange(request.user, card.pk, int(request.POST.get("rarity", 0)))
     except (GameError, Rarity.DoesNotExist, ValueError) as exc:
         messages.error(request, str(exc) or "Échange impossible.")
         return redirect("cards:card_detail", pk=card.pk)
-    target = Card.objects.select_related("player").get(pk=target_id)
-    messages.success(request, f"Échange fait : {target.player.ign} rejoint ta collection en {rarity.name.lower()}.")
-    return redirect("cards:card_detail", pk=target_id)
+    return redirect("cards:exchange_offer", pk=offer.pk)
+
+
+@login_required
+def exchange_offer(request, pk):
+    from .models import ExchangeOffer
+
+    offer = get_object_or_404(
+        ExchangeOffer.objects.select_related("rarity", "given_rarity", "given_card__player", "chosen"),
+        pk=pk, user=request.user,
+    )
+    choices = list(offer.choices.select_related("player", "split", "team", "image", "stats").order_by("-overall"))
+    owned = copies_by_card(request.user, [c.pk for c in choices])
+    for c in choices:
+        c.owned = sum(q for _, q in owned.get(c.pk, []))
+    return render(request, "cards/exchange.html", {"offer": offer, "choices": choices})
+
+
+@login_required
+@require_POST
+def choose_exchange_view(request, pk):
+    try:
+        card, rarity = choose_exchange(request.user, pk, int(request.POST.get("card", 0)))
+    except (GameError, ValueError) as exc:
+        messages.error(request, str(exc) or "Choix impossible.")
+        return redirect("cards:exchange_offer", pk=pk)
+    messages.success(request, f"{card.player.ign} rejoint ta collection en {rarity.name.lower()}.")
+    return redirect("cards:card_detail", pk=card.pk)
 
 
 # --------------------------------------------------------------------- Équipes
