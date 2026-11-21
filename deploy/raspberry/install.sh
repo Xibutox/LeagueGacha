@@ -60,6 +60,14 @@ LAN_NET="$(ip -4 route show dev "$LAN_DEV" scope link | awk '{print $1; exit}')"
 [ -n "$LAN_IP" ] && [ -n "$LAN_NET" ] || fail "Réseau local introuvable."
 echo "Réseau local : $LAN_NET (le Pi : $LAN_IP sur $LAN_DEV)"
 
+# Une installation déjà commencée : on reprend ses réponses.
+if [ -f "$APP_DIR/.env.prod" ]; then
+	SITE_DOMAIN="${SITE_DOMAIN:-$(sed -n 's/^SITE_DOMAIN=//p' "$APP_DIR/.env.prod")}"
+	ACME_EMAIL="${ACME_EMAIL:-$(sed -n 's/^ACME_EMAIL=//p' "$APP_DIR/.env.prod")}"
+fi
+if [ -d "$APP_DIR/.git" ]; then
+	REPO_URL="${REPO_URL:-$(git -C "$APP_DIR" remote get-url origin)}"
+fi
 ask REPO_URL "Dépôt GitHub du projet (https://github.com/… ou git@github.com:…)"
 ask SITE_DOMAIN "Nom de domaine public (ex. monjeu.freeboxos.fr)"
 ask ACME_EMAIL "E-mail pour les certificats Let's Encrypt"
