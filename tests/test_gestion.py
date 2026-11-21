@@ -340,3 +340,38 @@ def test_importing_everything_skips_finished_splits(admin_user, monkeypatch):
 
 def test_the_import_everything_page_opens(admin_client):
     assert admin_client.get(reverse("site:esport_split_tout-importer")).status_code == 200
+
+
+def test_the_full_import_leaves_out_side_events_and_future_editions(db):
+    import datetime
+
+    from esport.models import League, Tournament
+    from esport.tasks import _drop_empty_side_splits, _main_events
+
+    class Section:
+        def info(self, *a, **k):
+            pass
+
+    today = datetime.date.today()
+    rows = [
+        {"Name": "Worlds 2025", "DateStart": "2025-10-01", "Year": "2025"},
+        {"Name": "China Regional Finals 2018", "DateStart": "2018-08-01", "Year": "2018"},
+        {"Name": "LPL 2022 Regional Finals Showmatch", "DateStart": "2022-09-01", "Year": "2022"},
+        {"Name": "Worlds 2099", "DateStart": f"{today.year + 1}-10-01", "Year": str(today.year + 1)},
+        {"Name": "MSI sans date", "DateStart": "", "Year": str(today.year + 1)},
+    ]
+    assert [r["Name"] for r in _main_events(rows, Section())] == ["Worlds 2025"]
+
+    worlds = League.objects.create(name="World Championship", short_name="WCS", region="International")
+    old = Split.objects.create(league=worlds, name="China Regional Finals 2018", year=2018,
+                               start_date=datetime.date(2018, 8, 1))
+    Tournament.objects.create(overview_page="CRF 2018", name="China Regional Finals 2018", league=worlds, split=old)
+    future = Split.objects.create(league=worlds, name="Worlds 2099", year=2099)
+    kept = Split.objects.create(league=worlds, name="Worlds 2025", year=2025, start_date=datetime.date(2025, 10, 1))
+    other = League.objects.create(name="Ma ligue", short_name="ML", region="EMEA")
+    mine = Split.objects.create(league=other, name="Ma ligue sans date", year=2099)
+
+    assert set(_drop_empty_side_splits()) == {"China Regional Finals 2018", "Worlds 2099"}
+    assert set(Split.objects.values_list("pk", flat=True)) == {kept.pk, mine.pk}
+    assert not Tournament.objects.exists()
+    assert future.pk not in Split.objects.values_list("pk", flat=True)

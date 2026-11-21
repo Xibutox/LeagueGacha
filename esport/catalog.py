@@ -53,3 +53,20 @@ def ewc_q() -> Q:
 
 def full_import_q() -> Q:
     return major_leagues_q() | riot_events_q() | ewc_q()
+
+
+#: Des tournois rangés sous une compétition internationale qui n'en sont
+#: pas : les finales régionales (qualifications) et les matchs d'exhibition.
+SIDE_EVENT_WORDS = ("regional finals", "showmatch", "qualifier")
+
+
+def is_side_event(name: str) -> bool:
+    name = (name or "").lower()
+    return any(word in name for word in SIDE_EVENT_WORDS)
+
+
+def side_events_q(prefix: str = "") -> Q:
+    q = Q()
+    for word in SIDE_EVENT_WORDS:
+        q |= Q(**{f"{prefix}name__icontains": word})
+    return q

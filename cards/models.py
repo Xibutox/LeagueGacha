@@ -240,7 +240,7 @@ class Booster(models.Model):
 def qualified_for_international():
     """Filtre de cartes : l'équipe de la carte a joué un First Stand, un MSI
     ou des Worlds la même année."""
-    from esport.catalog import riot_events_q
+    from esport.catalog import riot_events_q, side_events_q
     from esport.models import GameAppearance
 
     return models.Exists(
@@ -248,7 +248,7 @@ def qualified_for_international():
             team_id=models.OuterRef("team_id"),
             tournament__split__year=models.OuterRef("split__year"),
             tournament__league__in=League.objects.filter(riot_events_q()),
-        )
+        ).exclude(side_events_q("tournament__"))
     )
 
 

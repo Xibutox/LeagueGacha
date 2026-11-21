@@ -208,12 +208,15 @@ def _import_tournaments(
     include_qualifiers: bool = False,
     images: bool = True,
     skip_finished: bool = False,
+    main_events_only: bool = False,
 ) -> str:
     """Trouve les tournois, crée les splits, puis importe ceux-ci.
     skip_finished : ne réimporte pas un split terminé avant son dernier import."""
     with run.report.section(label) as section:
         importer.log = _section_logger(section)
         rows = importer.discover(leagues, years, name_like or None)
+        if main_events_only:
+            rows = _main_events(rows, section)
 
         if not rows:
             section.error("Aucun tournoi trouvé pour ces ligues et ces années.")
@@ -232,9 +235,13 @@ def _import_tournaments(
             section.success(f"{name} : phases regroupées.")
     for tournament in tournaments:
         tournament.refresh_from_db()
-    split_ids = sorted(
-        {t.split_id for t in tournaments if t.split_id is not None}
-    )
+    # Les années récentes d'abord : le jeu est jouable au plus vite.
+    split_ids = [
+        pk for pk, _ in sorted(
+            Split.objects.filter(pk__in={t.split_id for t in tournaments if t.split_id}).values_list("pk", "year"),
+            key=lambda row: (-row[1], row[0]),
+        )
+    ]
     skipped = 0
     if skip_finished:
         done = [
@@ -278,9 +285,62 @@ def import_everything(run: Any, images: bool = True, refresh: bool = False) -> s
             section.error("Aucune de ces ligues trouvée sur Leaguepedia.")
             return "Aucune ligue trouvée."
         section.info(", ".join(leagues))
+    with run.report.section("Nettoyage") as section:
+        for name in _drop_empty_side_splits():
+            section.info(f"{name} : retiré (qualifications, exhibition ou pas encore joué).")
     return _import_tournaments(
-        run, importer, "Tournois : toutes les années", leagues, None, images=images, skip_finished=not refresh
+        run, importer, "Tournois : toutes les années", leagues, None, images=images,
+        skip_finished=not refresh, main_events_only=True,
     )
+
+
+def _main_events(rows: list[dict], section) -> list[dict]:
+    """Sans les finales régionales, les exhibitions, ni les tournois pas
+    encore commencés (Leaguepedia a déjà les pages des éditions futures)."""
+    from django.utils import timezone
+
+    from esport import scoring
+
+    from .catalog import is_side_event
+
+    today = timezone.localdate()
+    kept, skipped = [], 0
+    for row in rows:
+        start = scoring.parse_date(row.get("DateStart"))
+        year = scoring.parse_int(row.get("Year"), default=None)
+        not_started = start > today if start else (not year or year > today.year)
+        if is_side_event(row.get("Name") or row.get("OverviewPage")) or not_started:
+            skipped += 1
+            continue
+        kept.append(row)
+    if skipped:
+        section.info(f"{skipped} tournoi(s) sauté(s) : qualifications, exhibitions ou pas encore commencés.")
+    return kept
+
+
+def _drop_empty_side_splits() -> list[str]:
+    """Retire les splits sans aucune carte qui ne sont que des finales
+    régionales, des exhibitions ou des tournois pas encore commencés
+    (créés par un import précédent)."""
+    from django.utils import timezone
+
+    from .catalog import full_import_q, is_side_event
+    from .models import League, Tournament
+
+    today = timezone.localdate()
+    removed = []
+    splits = Split.objects.filter(cards__isnull=True, league__in=League.objects.filter(full_import_q()))
+    for split in splits.prefetch_related("tournaments"):
+        tournaments = list(split.tournaments.all())
+        if any(t.appearances.exists() for t in tournaments):
+            continue
+        side = is_side_event(split.name) or (tournaments and all(is_side_event(t.name) for t in tournaments))
+        future = not split.start_date or split.start_date > today
+        if side or future:
+            Tournament.objects.filter(pk__in=[t.pk for t in tournaments]).delete()
+            removed.append(split.name)
+            split.delete()
+    return removed
 
 
 
