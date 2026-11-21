@@ -60,8 +60,16 @@
       {% endif %}
     </p>
     <div class="actions">
-      {% if status %}
-        {% if status.unlimited or status.available %}
+      {% if portal %}
+        {% if status.available %}
+          <form method="post" action="{% url 'cards:open_portal' portal.pk %}" class="inline">{% csrf_token %}
+            <button class="btn btn-gold" type="submit">Ouvrir un autre booster du portail</button>
+          </form>
+        {% elif status.next_at %}
+          <span class="muted">Prochain booster du portail dans <time data-countdown datetime="{{ status.next_at|date:'c' }}"></time></span>
+        {% endif %}
+      {% elif status %}
+        {% if status.unlimited or status.available > 0 %}
           <form method="post" action="{% url 'cards:open_booster' opening.booster.slug %}" class="inline">{% csrf_token %}
             <button class="btn btn-gold" type="submit">Ouvrir un autre {{ opening.booster.name }}{% if not status.unlimited %} ({{ status.available }}){% endif %}</button>
           </form>

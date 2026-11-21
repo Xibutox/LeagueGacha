@@ -275,12 +275,14 @@ REST_FRAMEWORK = {
 
 # -- Logs ------------------------------------------------------------------
 
-from generic.logs import admins, logging_config  # noqa: E402
+from generic.logs import QUIET, admins, logging_config  # noqa: E402
 
 ADMINS = admins(env_list("DJANGO_ADMINS"))
 LOGGING = logging_config(
     level=env("DJANGO_LOG_LEVEL", "INFO"),
     file=env("DJANGO_LOG_FILE") or None,
+    # « channels over capacity » : sans intérêt, et des centaines pendant un import.
+    quiet=(*QUIET, "channels_redis.core"),
 )
 EMAIL_SUBJECT_PREFIX = "[LeagueGacha] "
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False

@@ -1018,3 +1018,26 @@ def test_the_home_page_shows_the_portal_and_opens_it(client, portal_booster, bob
 
 def test_the_gestion_lists_portals(admin_client, portal_booster):
     assert admin_client.get(reverse("site:cards_portal_list")).status_code == 200
+
+
+@override_settings(GAME_STAFF_UNLIMITED=False)
+def test_another_booster_is_offered_only_when_one_is_available(client, booster, bob):
+    client.force_login(bob)
+    first = client.post(reverse("cards:open_booster", args=[booster.slug]))
+    assert "Ouvrir un autre" in client.get(first["Location"]).content.decode()  # il en reste 1
+    last = client.post(reverse("cards:open_booster", args=[booster.slug]))
+    html = client.get(last["Location"]).content.decode()
+    assert "Ouvrir un autre" not in html and "Prochain Test dans" in html
+
+
+@override_settings(GAME_STAFF_UNLIMITED=False)
+def test_after_a_portal_booster_the_next_one_comes_from_the_portal(client, portal_booster, bob):
+    from cards.models import Portal
+
+    now = timezone.now()
+    portal = Portal.objects.create(booster=portal_booster, starts_at=now - timedelta(hours=1),
+                                   ends_at=now + timedelta(days=2))
+    client.force_login(bob)
+    response = client.post(reverse("cards:open_portal", args=[portal.pk]))
+    html = client.get(response["Location"]).content.decode()
+    assert "Ouvrir un autre" not in html and "Prochain booster du portail dans" in html

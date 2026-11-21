@@ -122,7 +122,7 @@ def open_portal_view(request, pk):
 
 @login_required
 def opening_detail(request, pk):
-    opening = get_object_or_404(PackOpening.objects.select_related("booster"), pk=pk, user=request.user)
+    opening = get_object_or_404(PackOpening.objects.select_related("booster", "portal"), pk=pk, user=request.user)
     items = list(
         opening.cards.select_related(
             "card__player", "card__split", "card__team", "card__image", "card__stats", "rarity"
@@ -137,8 +137,13 @@ def opening_detail(request, pk):
     fresh = timezone.now() - opening.opened_at < timedelta(minutes=10)
     latest = PackOpening.objects.filter(user=request.user).values_list("pk", flat=True).first()
     animate = fresh and latest == opening.pk and request.GET.get("anim") != "0"
-    status = None
-    if opening.booster:
+    # De quoi en ouvrir un autre : sur le portail s'il vient d'un portail
+    # encore ouvert, sinon dans la réserve du booster (s'il est en boutique).
+    status = portal_open = None
+    if opening.portal and opening.portal.is_active and opening.portal.ends_at > timezone.now():
+        portal_open = opening.portal
+        status = portal_status(request.user, portal_open)
+    elif opening.booster and opening.booster.is_active and not opening.portal:
         status = booster_status(request.user, [opening.booster])[opening.booster.pk]
     best = max(items, key=lambda i: (i.rarity.order, i.card.overall)) if items else None
     return render(
@@ -153,6 +158,7 @@ def opening_detail(request, pk):
             "fusable": [i for i in items if i.can_fuse],
             "best": best,
             "status": status,
+            "portal": portal_open,
         },
     )
 
