@@ -6,6 +6,9 @@ from datetime import timedelta
 import pytest
 
 from cards.models import (
+    FailleAchievement,
+    FailleData,
+    FailleRun,
     Supporter,
     WeeklyMeta,
     Booster,
@@ -87,6 +90,9 @@ class TestEveryPage(PageSweep):
                 user=admin_user, booster=booster, defaults={"refilled_at": opening.opened_at})[0],
             "cards.weeklymeta": WeeklyMeta.objects.create(week=opening.opened_at.date(), rules={}),
             "cards.supporter": Supporter.objects.create(user=admin_user, team=card.team),
+            "cards.failledata": FailleData.objects.create(key="items", version="1", data={"items": []}),
+            "cards.faillerun": FailleRun.objects.create(user=admin_user, week=opening.opened_at.date(), state={}),
+            "cards.failleachievement": FailleAchievement.objects.create(user=admin_user, code="weeks_1"),
         }
 
     #: Les écrans en lecture seule n'ont pas de formulaire d'ajout.
@@ -126,6 +132,14 @@ class TestEveryPage(PageSweep):
         "cards:roster_delete": (405,),
         "cards:weekly_reset": (405,),
         "cards:supporter": (405,),
+        "cards:faille_sync": (405,),
+        "cards:faille_buy": (405,),
+        "cards:faille_sell": (405,),
+        "cards:faille_ornn": (405,),
+        "cards:faille_elixir": (405,),
+        "cards:faille_augment": (405,),
+        "site:cards_faillerun_add": (403,),
+        "site:cards_failleachievement_add": (403,),
         "site:cards_weeklymeta_add": (403,),
     }
 

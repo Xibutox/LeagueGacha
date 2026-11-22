@@ -29,6 +29,7 @@
         <a href="{% url 'cards:collection' %}" class="tab{% if section == 'collection' or section == 'card_detail' %} is-active{% endif %}">Collection</a>
         <a href="{% url 'cards:rosters' %}" class="tab{% if section == 'rosters' or section == 'roster_new' or section == 'roster_edit' or section == 'weekly' %} is-active{% endif %}">Équipes</a>
       {% endif %}
+      {% if user.is_authenticated %}<a href="{% url 'cards:faille' %}" class="tab{% if section|slice:":6" == 'faille' %} is-active{% endif %}">La Faille</a>{% endif %}
       <a href="{% url 'cards:quiz' %}" class="tab{% if section|slice:":4" == 'quiz' %} is-active{% endif %}">Quiz</a>
       <a href="{% url 'cards:tournament' %}" class="tab{% if section|slice:":10" == 'tournament' %} is-active{% endif %}">Tournoi</a>
       <a href="{% url 'cards:ranking' %}" class="tab{% if section == 'ranking' %} is-active{% endif %}">Classement</a>

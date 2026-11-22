@@ -77,7 +77,7 @@ services:
   recalcul:
     <<: *app
     restart: "no"
-    command: python manage.py recompute_cards --si-besoin
+    command: sh -c "python manage.py recompute_cards --si-besoin; python manage.py sync_faille --si-besoin"
     depends_on:
       migrate:
         condition: service_completed_successfully

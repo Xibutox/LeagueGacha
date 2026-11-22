@@ -659,6 +659,12 @@ def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
         counts["rosters"] = Roster.objects.filter(user__in=users).delete()[1].get("cards.Roster", 0)
         ExchangeOffer.objects.filter(user__in=users).delete()
         QuizAttempt.objects.filter(user__in=users).delete()
+        from .models import FailleAchievement, FailleRun
+
+        FailleRun.objects.filter(user__in=users).delete()
+        FailleAchievement.objects.filter(user__in=users).delete()
+        for user in users:
+            cache.delete(f"faille:ach:{user.pk}")
         stocks = BoosterStock.objects.filter(user__in=users)
         if keep_gifts:
             stocks.filter(bonus=0).delete()
@@ -1014,12 +1020,16 @@ def evaluate_roster(user, picks: dict, check: bool = False, week=None) -> dict:
                 e.pop("profile", None)
     fans = sum(1 for s in slots.values() if s["supporter"])
     base = team_score([c["score"] for c in compositions]) if complete else None
+    from .faille import achievement_bonus, achievement_count
+
+    faille_bonus = achievement_bonus(user)
     return {
         "slots": slots,
         "compositions": compositions,
         "base_score": base,
         "supporter": {"team": fan_team.name, "players": fans, "bonus": fans * SUPPORTER_BONUS} if fan_team else None,
-        "score": round(base * (1 + fans * SUPPORTER_BONUS / 100), 1) if base is not None else None,
+        "faille": {"achievements": achievement_count(user), "bonus": faille_bonus} if faille_bonus else None,
+        "score": round(base * (1 + fans * SUPPORTER_BONUS / 100) * (1 + faille_bonus / 100), 2) if base is not None else None,
         "complete": complete,
         "errors": errors,
         "week": week.isoformat() if week else None,
@@ -1084,7 +1094,8 @@ def refresh_roster(roster) -> dict:
         slot.save(update_fields=["score"])
     roster.score = result["score"]
     roster.details = {"compositions": result["compositions"], "complete": result["complete"],
-                      "base_score": result["base_score"], "supporter": result["supporter"]}
+                      "base_score": result["base_score"], "supporter": result["supporter"],
+                      "faille": result["faille"]}
     roster.save(update_fields=["score", "details"])
     return result
 

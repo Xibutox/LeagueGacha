@@ -578,6 +578,16 @@ def _lineup_cards(roster, best: dict) -> list[dict]:
 def ranking(request):
     """Le classement général (meilleure équipe permanente complète de
     chaque joueur) ou celui de la semaine (?semaine=1)."""
+    if request.GET.get("faille"):
+        from . import faille
+
+        rows = faille.leaderboard()
+        mine = next(((rank, r) for rank, r in rows if r.user_id == request.user.pk), None) \
+            if request.user.is_authenticated else None
+        return render(request, "cards/ranking.html", {
+            "faille": True, "rows": rows, "mine": mine, "week": weekly.week_start(),
+            "ends_at": weekly.week_end(weekly.week_start()),
+        })
     week = None
     if request.GET.get("semaine"):
         week = weekly.week_start()

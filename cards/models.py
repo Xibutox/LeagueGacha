@@ -832,3 +832,67 @@ class Supporter(models.Model):
 
     def __str__(self):
         return f"{self.user} ❤ {self.team}"
+
+
+# --------------------------------------------------------------------- La Faille (clicker)
+class FailleData(models.Model):
+    """Les données de la Faille venues de l'extérieur (cards/faille.py) :
+    « items » = le catalogue d'objets (Data Dragon), « images » = les
+    chemins des images téléchargées, « awarded:<semaine> » = les succès de
+    classement attribués."""
+
+    key = models.CharField("clé", max_length=60, unique=True)
+    version = models.CharField("version", max_length=30, blank=True)
+    data = models.JSONField("données", default=dict)
+    updated_at = models.DateTimeField("mis à jour", auto_now=True)
+
+    class Meta:
+        verbose_name = "donnée de la Faille"
+        verbose_name_plural = "données de la Faille"
+
+    def __str__(self):
+        return f"{self.key} ({self.version})"
+
+
+class FailleRun(models.Model):
+    """La partie d'un joueur du site dans la Faille, pour une semaine.
+    state : étape, or, inventaire, augments, drakes, charges… (cards/faille.py)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="faille_runs"
+    )
+    week = models.DateField("semaine (lundi)")
+    state = models.JSONField("état", default=dict)
+    kills = models.PositiveIntegerField("ennemis vaincus", default=0, db_index=True)
+    best = models.PositiveIntegerField("étape la plus profonde", default=0)
+    synced_at = models.DateTimeField("dernière sauvegarde", null=True, blank=True)
+    created_at = models.DateTimeField("commencée le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "partie de la Faille"
+        verbose_name_plural = "parties de la Faille"
+        ordering = ["-week", "-kills"]
+        constraints = [models.UniqueConstraint(fields=["user", "week"], name="one_faille_run_per_week")]
+
+    def __str__(self):
+        return f"{self.user} — semaine du {self.week:%d/%m} ({self.kills} ennemis)"
+
+
+class FailleAchievement(models.Model):
+    """Un succès de la Faille, débloqué pour toujours (+0,05 % aux équipes)."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE,
+        related_name="faille_achievements",
+    )
+    code = models.CharField("succès", max_length=40)
+    unlocked_at = models.DateTimeField("débloqué le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "succès de la Faille"
+        verbose_name_plural = "succès de la Faille"
+        ordering = ["-unlocked_at"]
+        constraints = [models.UniqueConstraint(fields=["user", "code"], name="one_achievement_per_user")]
+
+    def __str__(self):
+        return f"{self.user} — {self.code}"

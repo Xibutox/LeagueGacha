@@ -183,6 +183,29 @@ de carte vaut à peu près celle de DPM.lol + 15.
   d'année) ; +1 % au score de ses équipes, permanentes et de la semaine,
   par joueur de cette équipe aligné. Pas en tournoi.
 
+## La Faille (le clicker)
+
+Un clicker roguelite d'une semaine, remis à zéro chaque lundi (onglet « La
+Faille ») : on affronte les ennemis un par un (même suite pour tout le monde
+dans la semaine), les sbires rapportent de l'or, les monstres des buffs, le
+Baron Nashor et le Dragon ancestral un augment au choix parmi 3. La boutique
+reprend les vrais objets de la Faille de l'invocateur (Data Dragon, en
+français), avec leurs recettes ; un légendaire devient chef-d'œuvre d'Ornn
+avec l'augment Forge d'Ornn de sa classe. Hors ligne, seul l'or continue de
+tomber.
+
+- Règles et réglages : `cards/faille_rules.py` (Python) et
+  `static/js/faille-engine.js` (le combat, dans le navigateur).
+- Le serveur reçoit une sauvegarde toutes les 30 s et vérifie qu'elle est
+  possible (étapes, dégâts, or) : `cards/faille.py`.
+- 20 succès permanents, chacun +0,05 % au score des équipes (1 % au plus),
+  pas en tournoi.
+- Objets et images : `python manage.py sync_faille` (lancé au démarrage s'il
+  n'y a encore rien).
+- Calibrage : `python manage.py sync_faille --regles-sim faille-rules.json`,
+  puis `RULES=faille-rules.json node tools/faille-sim.js` joue une semaine
+  pour quatre profils (10 min, 1 h, 4 h, 10 h par jour).
+
 ## Raretés, fusions, échanges
 
 Chaque joueur existe à toutes les raretés : la rareté est celle de

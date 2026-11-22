@@ -3,16 +3,37 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Classement{% if week %} de la semaine{% endif %}</h1>
-    {% if week %}<p>Les équipes de la semaine du {{ week|date:"j F" }}, avec les bonus de sa méta. Nouvelle semaine dans <time data-countdown data-reload datetime="{{ ends_at|date:'c' }}"></time>.</p>
+    <h1>Classement{% if faille %} de la Faille{% elif week %} de la semaine{% endif %}</h1>
+    {% if faille %}<p>Les ennemis vaincus dans la Faille cette semaine. Remise à zéro dans <time data-countdown data-reload datetime="{{ ends_at|date:'c' }}"></time>.</p>
+    {% elif week %}<p>Les équipes de la semaine du {{ week|date:"j F" }}, avec les bonus de sa méta. Nouvelle semaine dans <time data-countdown data-reload datetime="{{ ends_at|date:'c' }}"></time>.</p>
     {% else %}<p>Chaque joueur est classé sur sa meilleure équipe permanente complète : la moyenne de ses 5 compositions.</p>{% endif %}
   </div>
-  {% if user.is_authenticated %}{% if week %}<a class="btn btn-gold" href="{% url 'cards:weekly' %}">Mon équipe de la semaine</a>{% else %}<a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Monter une équipe</a>{% endif %}{% endif %}
+  {% if user.is_authenticated %}{% if faille %}<a class="btn btn-gold" href="{% url 'cards:faille' %}">Entrer dans la Faille</a>{% elif week %}<a class="btn btn-gold" href="{% url 'cards:weekly' %}">Mon équipe de la semaine</a>{% else %}<a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Monter une équipe</a>{% endif %}{% endif %}
 </div>
 <nav class="subtabs" aria-label="Classements">
   <a href="{% url 'cards:ranking' %}"{% if not week %} class="is-active" aria-current="page"{% endif %}>Général</a>
-  <a href="{% url 'cards:ranking' %}?semaine=1"{% if week %} class="is-active" aria-current="page"{% endif %}>Semaine</a>
+  <a href="{% url 'cards:ranking' %}?semaine=1"{% if week and not faille %} class="is-active" aria-current="page"{% endif %}>Semaine</a>
+  <a href="{% url 'cards:ranking' %}?faille=1"{% if faille %} class="is-active" aria-current="page"{% endif %}>La Faille</a>
 </nav>
+{% if faille %}
+  {% if user.is_authenticated %}
+    <p class="my-rank">{% if mine %}Tu es <b>{{ mine.0 }}{% if mine.0 == 1 %}er{% else %}e{% endif %}</b> avec {{ mine.1.kills }} ennemis vaincus.
+    {% else %}Pas encore d'ennemi vaincu cette semaine : <a href="{% url 'cards:faille' %}">entre dans la Faille</a>.{% endif %}</p>
+  {% endif %}
+  <table class="ranking">
+    <thead><tr><th>#</th><th>Joueur</th><th class="num">Ennemis vaincus</th><th class="num">Étape max</th><th class="num">Succès</th></tr></thead>
+    <tbody>
+      {% for rank, run in rows %}
+        <tr{% if run.user_id == user.pk %} class="me"{% endif %}>
+          <td class="rank">{{ rank }}</td><td>{{ run.user.username }}</td>
+          <td class="num"><b>{{ run.kills }}</b></td><td class="num">{{ run.best }}</td><td class="num">{{ run.achievements }}/20</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="5" class="muted">Personne n'a encore vaincu d'ennemi cette semaine.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
 
 {% if user.is_authenticated %}
   <p class="my-rank">
@@ -53,4 +74,5 @@
     {% endfor %}
   </tbody>
 </table>
+{% endif %}
 {% endblock %}

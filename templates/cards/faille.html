@@ -1,0 +1,102 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}La Faille — LeagueGacha{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'css/faille.css' %}?v=22">{% endblock %}
+{% block content %}
+{% if not ready %}
+  <div class="page-head"><div><h1>La Faille</h1><p>Le mini-jeu n'est pas encore prêt : ses objets et ses images n'ont pas été importés.</p></div></div>
+  <div class="panel"><p class="muted">Un administrateur doit lancer <code>python manage.py sync_faille</code> (fait automatiquement au prochain déploiement).</p></div>
+{% else %}
+<div class="faille" id="faille" data-csrf="{{ csrf_token }}">
+  <header class="fl-head">
+    <div>
+      <h1>La Faille</h1>
+      <p class="muted">Clique pour frapper. Les sbires rapportent de l'or, les monstres des buffs, le Nashor des augments. Tout repart à zéro dans <time data-countdown datetime="{{ data.ends|floatformat:0 }}" id="fl-ends"></time>.</p>
+    </div>
+    <dl class="fl-counters">
+      <div><dt>Ennemis vaincus</dt><dd id="fl-kills">0</dd></div>
+      <div><dt>Étape max</dt><dd id="fl-best">0</dd></div>
+      <div class="is-gold"><dt>Or</dt><dd id="fl-gold">0</dd></div>
+    </dl>
+  </header>
+
+  <p class="fl-offline" id="fl-offline" hidden></p>
+
+  <div class="fl-main">
+    <section class="fl-arena" aria-label="Combat">
+      <div class="fl-steps">
+        <button type="button" class="fl-stepbtn" id="fl-prev" aria-label="Étape précédente">◀</button>
+        <div class="fl-step"><span>Étape</span><b id="fl-step">0</b></div>
+        <button type="button" class="fl-stepbtn" id="fl-next" aria-label="Étape suivante">▶</button>
+        <label class="fl-auto"><input type="checkbox" id="fl-auto" checked> Avancer après chaque victoire</label>
+      </div>
+      <div class="fl-enemy" id="fl-enemy">
+        <div class="fl-enemy-name"><b id="fl-enemy-name">—</b><span id="fl-enemy-tag"></span></div>
+        <div class="fl-bar fl-bar-enemy"><span id="fl-enemy-hp"></span><em id="fl-enemy-hp-text"></em></div>
+        <button type="button" class="fl-target" id="fl-target" aria-label="Frapper l'ennemi">
+          <img id="fl-enemy-img" alt="" draggable="false">
+          <span class="fl-placeholder" id="fl-enemy-ph" hidden></span>
+          <span class="fl-rage" id="fl-rage" hidden>Enragé</span>
+        </button>
+        <div class="fl-floats" id="fl-floats" aria-hidden="true"></div>
+      </div>
+      <div class="fl-player">
+        <div class="fl-bar fl-bar-player"><span id="fl-player-hp"></span><em id="fl-player-hp-text"></em></div>
+        <button type="button" class="fl-smite" id="fl-smite"><b>Châtiment</b><small id="fl-smite-cd">prêt</small></button>
+      </div>
+      <ul class="fl-buffs" id="fl-buffs" aria-label="Effets actifs"></ul>
+      <ol class="fl-log" id="fl-log" aria-live="polite"></ol>
+    </section>
+
+    <aside class="fl-side">
+      <section class="fl-inv-wrap" aria-label="Inventaire">
+        <h2>Inventaire</h2>
+        <ol class="fl-inv" id="fl-inv"></ol>
+        <p class="muted small" id="fl-inv-hint">Clique sur un objet pour le vendre ou en faire un chef-d'œuvre d'Ornn.</p>
+      </section>
+      <section aria-label="Statistiques">
+        <h2>Statistiques</h2>
+        <dl class="fl-stats" id="fl-stats"></dl>
+      </section>
+      <section aria-label="Bonus de la semaine">
+        <h2>Bonus de la semaine</h2>
+        <div class="fl-perks" id="fl-perks"></div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="fl-shop" aria-label="Boutique">
+    <div class="strap"><h2>Boutique</h2><p>Les objets du jeu, avec leurs recettes : les composants que tu as déjà sont déduits du prix.</p></div>
+    <div class="fl-shop-bar">
+      <div class="fl-kinds" id="fl-kinds" role="tablist"></div>
+      <input type="search" id="fl-search" placeholder="Chercher un objet" aria-label="Chercher un objet">
+    </div>
+    <div class="fl-shop-body">
+      <div class="fl-items" id="fl-items"></div>
+      <div class="fl-detail" id="fl-detail"><p class="muted">Choisis un objet pour voir ses stats et sa recette.</p></div>
+    </div>
+  </section>
+
+  <section class="fl-ach" aria-label="Succès">
+    <div class="strap"><h2>Succès</h2><p id="fl-ach-sum"></p></div>
+    <ul class="fl-ach-list" id="fl-ach"></ul>
+  </section>
+</div>
+
+<dialog class="fl-augments" id="fl-augments" aria-labelledby="fl-aug-title">
+  <h2 id="fl-aug-title">Choisis un augment</h2>
+  <p class="muted" id="fl-aug-sub"></p>
+  <div class="fl-aug-cards" id="fl-aug-cards"></div>
+</dialog>
+<dialog class="fl-slot" id="fl-slot" aria-labelledby="fl-slot-title">
+  <h2 id="fl-slot-title"></h2>
+  <div id="fl-slot-body"></div>
+  <div class="fl-slot-actions" id="fl-slot-actions"></div>
+</dialog>
+{{ data|json_script:"faille-data" }}
+{% endif %}
+{% endblock %}
+{% block scripts %}{% if ready %}
+<script src="{% static 'js/faille-engine.js' %}?v=22"></script>
+<script src="{% static 'js/faille.js' %}?v=22"></script>
+{% endif %}{% endblock %}

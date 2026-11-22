@@ -27,6 +27,8 @@ from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     ExchangeOffer,
     QuizAttempt,
+    FailleAchievement,
+    FailleRun,
     Supporter,
     WeeklyMeta,
     Tournament,
@@ -845,3 +847,41 @@ class SupporterResource(ModelResource):
     list_select_related = ("user", "team")
     search_fields = ("user__username", "team__name")
     ordering = ("user__username",)
+
+
+@register(FailleRun)
+class FailleRunResource(ModelResource):
+    icon = "swords"
+    group = PLAYERS
+    order = 9
+    label_plural = _("parties de la Faille")
+    description = _("Les parties de la Faille (le clicker), une par joueur et par semaine.")
+    history = False
+
+    list_display = ("week", "user", "kills", "best", "synced_at")
+    list_filter = ("week",)
+    list_select_related = ("user",)
+    search_fields = ("user__username",)
+    ordering = ("-week", "-kills")
+    readonly_fields = ("user", "week", "state", "kills", "best", "synced_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(FailleAchievement)
+class FailleAchievementResource(ModelResource):
+    icon = "military_tech"
+    group = PLAYERS
+    order = 10
+    label_plural = _("succès de la Faille")
+    description = _("Les succès débloqués dans la Faille : chacun ajoute 0,05 % au score des équipes.")
+    history = False
+
+    list_display = ("user", "code", "unlocked_at")
+    list_select_related = ("user",)
+    search_fields = ("user__username", "code")
+    ordering = ("-unlocked_at",)
+
+    def has_add_permission(self, request):
+        return False
