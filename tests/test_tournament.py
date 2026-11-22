@@ -190,37 +190,65 @@ def test_the_opponent_picks_what_its_players_played(tourney, player):
     assert move["champion"] in played and move["role"] in ROLES
 
 
-def test_the_tournament_pages(client, tourney, player):
+def test_the_bo5_page_loads_once_then_plays_in_json(client, tourney, player):
+    import json
+
     client.force_login(player)
     page = client.get(reverse("cards:tournament"))
     assert page.status_code == 200 and "Défier" in page.content.decode()
     response = client.post(reverse("cards:tournament_start", args=[tourney.pk]))
     series = TournamentSeries.objects.get()
     assert response["Location"] == reverse("cards:tournament_series", args=[series.pk])
-    assert "Choisis tes 5 joueurs" in client.get(response["Location"]).content.decode()
-
-    client.post(reverse("cards:tournament_lineup", args=[series.pk]), lineup_for(player))
     html = client.get(response["Location"]).content.decode()
-    assert "à toi de bannir" in html
+    assert 'id="bo5-state"' in html and 'id="bo5-static"' in html and "tournament.js" in html
+
+    url = reverse("cards:tournament_action", args=[series.pk])
+
+    def act(**payload):
+        return client.post(url, json.dumps(payload), content_type="application/json")
+
+    refused = act(type="lineup", picks={r: 999999 for r in ROLES})
+    assert refused.status_code == 409 and "collection" in refused.json()["error"]
+    done = act(type="lineup", picks=lineup_for(player))
+    assert done.status_code == 200
+    data = done.json()
+    assert data["state"]["status"] == "draft" and data["state"]["draft"]["turn"]["type"] == "ban"
+    assert set(data["static"]["ratings"]) == set(ROLES) and data["static"]["champions"]
+
+    rng_free = lambda st: next(c["id"] for c in data["static"]["champions"] if c["id"] not in st["draft"]["taken"])
+    state = data["state"]
+    wrong = act(type="pick", champion=rng_free(state), role="Top")
+    assert wrong.status_code == 409
+    games_played = 0
+    for _ in range(60):
+        turn = state["draft"]["turn"]
+        payload = {"type": turn["type"], "champion": rng_free(state)}
+        if turn["type"] == "pick":
+            payload["role"] = next(r for r in ROLES if r not in state["draft"]["picks"]["user"])
+        reply = act(**payload)
+        assert reply.status_code == 200, reply.content
+        state = reply.json()["state"]
+        if reply.json()["played"]:
+            games_played += 1
+            break
+    assert games_played == 1 and state["games"][0]["number"] == 1 and len(state["games"][0]["rows"]) == 5
+    assert "Reprendre ton Bo5" in client.get(reverse("cards:tournament")).content.decode()
+
+
+def test_a_draft_action_runs_few_queries(client, tourney, player, django_assert_max_num_queries):
+    import json
+
+    client.force_login(player)
+    series = game.start_series(player, tourney)
+    game.set_lineup(player, series, lineup_for(player))
     series.refresh_from_db()
+    url = reverse("cards:tournament_action", args=[series.pk])
     state = game.draft_state(series)
     free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
-    banned = client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": free})
-    assert banned["Location"].endswith("#draft")
-    for _ in range(4):  # 3 bans chacun, puis le premier pick
-        series.refresh_from_db()
-        state = game.draft_state(series)
-        if state["turn"]["type"] == "pick":
-            break
-        free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
-        client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": free})
-    html = client.get(response["Location"]).content.decode()
-    assert "à toi de choisir" in html and 'class="champ-grid"' in html and 'name="role"' in html
-    free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
-    client.post(reverse("cards:tournament_draft", args=[series.pk]), {"champion": free, "role": "Top"})
-    series.refresh_from_db()
-    assert game.draft_state(series)["picks"]["user"]["Top"] == free
-    assert "Reprendre ton Bo5" in client.get(reverse("cards:tournament")).content.decode()
+    client.get(reverse("cards:tournament"))  # caches chauds
+    with django_assert_max_num_queries(40):
+        reply = client.post(url, json.dumps({"type": "ban", "champion": free}), content_type="application/json")
+    assert reply.status_code == 200
 
 
 def test_someone_elses_bo5_is_hidden(client, tourney, player, django_user_model):

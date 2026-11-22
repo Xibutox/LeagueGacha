@@ -109,8 +109,7 @@ class TestEveryPage(PageSweep):
         "cards:exchange_offer": (404,),
         "cards:tournament_series": (404,),
         "cards:tournament_start": (405,),
-        "cards:tournament_lineup": (405,),
-        "cards:tournament_draft": (405,),
+        "cards:tournament_action": (405,),
         "site:cards_tournamentseries_add": (403,),
         # Une équipe n'est visible que de son propriétaire ; supprimer = POST.
         "cards:roster_edit": (404,),
@@ -127,7 +126,7 @@ class TestEveryPage(PageSweep):
             return records["cards.exchangeoffer"].pk
         if url_name == "cards:tournament_start":
             return records["cards.tournament"].pk
-        if url_name in {"cards:tournament_series", "cards:tournament_lineup", "cards:tournament_draft"}:
+        if url_name in {"cards:tournament_series", "cards:tournament_action"}:
             return records["cards.tournamentseries"].pk
         if url_name == "cards:open_portal":
             return records["cards.portal"].pk

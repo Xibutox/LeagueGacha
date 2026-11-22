@@ -2,6 +2,7 @@
 boosters (réserve et ouverture), équipes et classement."""
 from __future__ import annotations
 
+import hashlib
 import itertools
 import logging
 import random
@@ -9,7 +10,8 @@ from datetime import timedelta
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.core.cache import cache
+from django.db import IntegrityError, connection, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 from django.utils.text import slugify
@@ -827,17 +829,28 @@ def _parse_picks(picks: dict) -> dict[str, tuple[int, list]]:
 
 
 def _duo_pairs(champion_names: set[str]) -> set[frozenset]:
-    """Les paires de ces champions déjà jouées ensemble en compétition."""
-    teams: dict[tuple, set] = {}
-    for game_id, team_id, name in GameAppearance.objects.filter(champion__in=champion_names).values_list(
-        "game_id", "team_id", "champion"
-    ):
-        teams.setdefault((game_id, team_id), set()).add(name)
-    pairs = set()
-    for names in teams.values():
-        if len(names) > 1:
-            pairs.update(frozenset(p) for p in itertools.combinations(sorted(names), 2))
-    return pairs
+    """Les paires de ces champions déjà jouées ensemble en compétition (même
+    équipe, même partie). Calculé en SQL et gardé en cache : la table des
+    parties est la plus grosse de la base."""
+    names = sorted(set(champion_names))
+    if len(names) < 2:
+        return set()
+    key = "duos:" + hashlib.md5("|".join(names).encode()).hexdigest()
+    cached = cache.get(key)
+    if cached is not None:
+        return {frozenset(p) for p in cached}
+    table = GameAppearance._meta.db_table
+    marks = ", ".join(["%s"] * len(names))
+    sql = (
+        f"SELECT DISTINCT a.champion, b.champion FROM {table} a "
+        f"JOIN {table} b ON a.game_id = b.game_id AND a.team_id = b.team_id AND a.champion < b.champion "
+        f"WHERE a.champion IN ({marks}) AND b.champion IN ({marks})"
+    )
+    with connection.cursor() as cursor:
+        cursor.execute(sql, names + names)
+        pairs = [tuple(row) for row in cursor.fetchall()]
+    cache.set(key, pairs, 24 * 3600)
+    return {frozenset(p) for p in pairs}
 
 
 def evaluate_roster(user, picks: dict, check: bool = False) -> dict:

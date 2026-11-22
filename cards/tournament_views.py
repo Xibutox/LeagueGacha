@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import json
+
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
-from django.db.models import Count
+from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -58,125 +60,165 @@ def tournament_start(request, pk):
 def _series(request, pk) -> TournamentSeries:
     return get_object_or_404(
         TournamentSeries.objects.select_related("run__tournament__split", "team", "opponent_rarity",
-                                                "reward_card__player", "reward_rarity"),
+                                                "reward_card__player", "reward_card__image", "reward_rarity"),
         pk=pk, run__user=request.user,
     )
+
+
+# Le Bo5 tient sur une seule page : elle se charge une fois, puis chaque
+# coup (choix des joueurs, ban, pick) est une petite requête JSON qui
+# renvoie le nouvel état ; static/js/tournament.js redessine la page.
+
+def _rarity_json(rarity):
+    return {"name": rarity.name, "color": rarity.color, "bonus": float(rarity.score_bonus)} if rarity else None
+
+
+def _card_json(card, rarity=None):
+    if card is None:
+        return None
+    return {
+        "id": card.pk, "ign": card.player.ign, "role": card.role, "overall": card.overall,
+        "photo": card.image_url, "split": card.split.name, "rarity": _rarity_json(rarity),
+    }
+
+
+def _cards(ids):
+    return Card.objects.select_related("player", "split", "image").in_bulk([int(c) for c in ids])
+
+
+def state_payload(series: TournamentSeries) -> dict:
+    """Tout ce qui change pendant le Bo5."""
+    tournament = series.run.tournament
+    cards = _cards(list(series.opponent.values()) + list(series.lineup.values()))
+    rarities = Rarity.objects.in_bulk([int(r) for r in series.lineup_rarities.values()])
+    payload = {
+        "id": series.pk,
+        "status": series.status,
+        "wins": series.wins,
+        "losses": series.losses,
+        "step": series.step + 1,
+        "total": len(tournament.opponents),
+        "team": series.team.name if series.team else "?",
+        "tournament": tournament.title,
+        "opponent_rarity": _rarity_json(series.opponent_rarity),
+        "opponent": [_card_json(cards.get(int(series.opponent[r])), series.opponent_rarity) for r in ROLES],
+        "lineup": [
+            _card_json(cards.get(int(series.lineup[r])), rarities.get(int(series.lineup_rarities[r])))
+            for r in ROLES
+        ] if series.lineup else [],
+        "fearless": sorted(series.used_champions()),
+        "games": [
+            {
+                "number": g["number"], "won": g["won"], "side": g.get("side"),
+                "user_score": g["user_score"], "opponent_score": g["opponent_score"],
+                "user_coherence": g["user_coherence"], "opponent_coherence": g["opponent_coherence"],
+                "bans": g.get("bans"),
+                "rows": [{"role": r, "user": g["user"][r], "opponent": g["opponent"][r]} for r in ROLES],
+            }
+            for g in reversed(series.games)
+        ],
+        "reward": _card_json(series.reward_card, series.reward_rarity),
+        "next_at": None,
+        "draft": None,
+    }
+    if series.is_over:
+        status = game.run_status(series.run)
+        payload["next_at"] = status["next_at"].isoformat() if status["next_at"] else None
+    if series.status == TournamentSeries.Status.DRAFT:
+        state = game.draft_state(series)
+        payload["draft"] = {
+            "side": state["side"], "bans": state["bans"], "picks": state["picks"], "turn": state["turn"],
+            "taken": sorted(state["taken"]),
+            "step": len((series.draft or {}).get("actions", [])) + 1, "steps": len(game.DRAFT_ORDER),
+        }
+    return payload
+
+
+def _champion_tiles() -> list[dict]:
+    from django.core.cache import cache
+
+    tiles = cache.get("champions:tiles")
+    if tiles is None:
+        tiles = [{"id": c.pk, "name": c.name, "icon": c.icon_url} for c in Champion.objects.order_by("name")]
+        cache.set("champions:tiles", tiles, 3600)
+    return tiles
+
+
+def static_payload(series: TournamentSeries, user) -> dict:
+    """Ce qui ne change pas d'une partie à l'autre : les champions, les notes
+    des joueurs alignés, ce que l'adversaire a joué ; et, avant le choix des
+    joueurs, la collection."""
+    payload = {"champions": _champion_tiles(), "roles": ROLES}
+    if series.status == TournamentSeries.Status.LINEUP:
+        copies = copies_by_card(user)
+        mine = Card.objects.filter(pk__in=list(copies)).select_related("player", "split", "image")
+        choices = {r: [] for r in ROLES}
+        for card in sorted(mine, key=lambda c: -c.overall):
+            if card.role in choices:
+                choices[card.role].append(_card_json(card, copies[card.pk][-1][0]))
+        payload["choices"] = choices
+    elif series.lineup:
+        cards = Card.objects.select_related("stats").in_bulk([int(c) for c in series.lineup.values()])
+        ratings = {}
+        for role in ROLES:
+            card = cards[int(series.lineup[role])]
+            player_rating = card.stats.score if card.stats else 50.0
+            ratings[role] = {"base": round(game.unplayed_rating(player_rating)), "played": {}}
+        by_card = {int(series.lineup[r]): r for r in ROLES}
+        for a in CardChampion.objects.filter(card_id__in=list(by_card)):
+            ratings[by_card[a.card_id]]["played"][a.champion_id] = [round(a.rating), a.games + a.history_games]
+        payload["ratings"] = ratings
+        prepared = game.prepare(series)
+        opponents = _cards(series.opponent.values())
+        hints = {}
+        for role in ROLES:
+            ign = opponents[int(series.opponent[role])].player.ign
+            for cid, n in prepared.get("pools", {}).get(role, []):
+                hints.setdefault(str(cid), []).append([ign, n])
+        payload["hints"] = hints
+    return payload
 
 
 @login_required
 def tournament_series(request, pk):
     series = _series(request, pk)
-    context = {"series": series, "roles": ROLES, **game.series_view(series)}
-    context["tournament"] = series.run.tournament
-    context["total"] = len(series.run.tournament.opponents)
-    if series.status == TournamentSeries.Status.LINEUP:
-        context["choices"] = _lineup_choices(request.user)
-    elif series.status == TournamentSeries.Status.DRAFT:
-        context["board"] = _draft_board(series)
-    context["lineup_rarities"] = Rarity.objects.in_bulk([int(r) for r in series.lineup_rarities.values()])
-    context["games"] = list(reversed(series.games))
-    context["run_status"] = game.run_status(series.run)
-    return render(request, "cards/tournament_series.html", context)
-
-
-def _lineup_choices(user) -> list[tuple[str, list]]:
-    copies = copies_by_card(user)
-    cards = Card.objects.filter(pk__in=list(copies)).select_related("player", "split", "stats")
-    by_role: dict[str, list] = {r: [] for r in ROLES}
-    for card in sorted(cards, key=lambda c: -c.overall):
-        if card.role in by_role:
-            card.best = copies[card.pk][-1][0]
-            by_role[card.role].append(card)
-    return [(r, by_role[r]) for r in ROLES]
-
-
-def _draft_board(series: TournamentSeries) -> dict:
-    """La draft en cours : bans et picks des deux côtés, et le tour du
-    joueur du site avec ses choix possibles."""
-    from esport.models import GameAppearance
-
-    state = game.draft_state(series)
-    view = game.series_view(series)
-    mine, theirs = dict(view["lineup"]), dict(view["opponent"])
-    all_champions = list(Champion.objects.order_by("name"))
-    by_id = {c.pk: c for c in all_champions}
-    free = [c for c in all_champions if c.pk not in state["taken"]]
-
-    def side(team, cards):
-        return {
-            "bans": [by_id.get(c) for c in state["bans"][team]],
-            "slots": [{"role": r, "card": cards[r], "champion": by_id.get(state["picks"][team].get(r))} for r in ROLES],
-        }
-
-    board = {
-        "user_color": state["side"],
-        "user": side("user", mine),
-        "opponent": side("opponent", theirs),
-        "turn": state["turn"],
-        "step": len((series.draft or {}).get("actions", [])) + 1,
-        "steps": len(game.DRAFT_ORDER),
-    }
-    turn = state["turn"]
-    if turn and turn["team"] == "user" and turn["type"] == "ban":
-        # Pour bannir : ce que les joueurs d'en face ont joué pendant le tournoi.
-        pools: dict[str, list[str]] = {}
-        counts: dict[str, int] = {}
-        rows = (
-            GameAppearance.objects.filter(tournament__split=series.run.tournament.split_id,
-                                          player__in=[c.player_id for c in theirs.values()])
-            .values("champion", "player__ign").annotate(n=Count("id")).order_by("-n")
-        )
-        for r in rows:
-            pools.setdefault(r["champion"], []).append(f"{r['player__ign']} ×{r['n']}")
-            counts[r["champion"]] = counts.get(r["champion"], 0) + r["n"]
-        board["tiles"] = sorted(
-            ({"champion": c, "note": counts.get(c.name, 0), "title": "Joué par " + ", ".join(pools[c.name])
-              if c.name in pools else "", "played": c.name in pools} for c in free),
-            key=lambda t: (-t["note"], t["champion"].name),
-        )
-    elif turn and turn["team"] == "user":
-        roles = [r for r in ROLES if r not in state["picks"]["user"]]
-        played = {}
-        for a in CardChampion.objects.filter(card__in=[mine[r] for r in roles]):
-            played[(a.card_id, a.champion_id)] = a
-        tiles = []
-        for c in free:
-            per_role = []
-            for role in roles:
-                card = mine[role]
-                a = played.get((card.pk, c.pk))
-                player_rating = card.stats.score if card.stats else 50.0
-                rating = round(a.rating if a else game.unplayed_rating(player_rating))
-                per_role.append(f"{role}:{rating}:{(a.games + a.history_games) if a else 0}:{1 if a else 0}")
-            tiles.append({"champion": c, "ratings": " ".join(per_role)})
-        board["tiles"] = tiles
-        board["pick_roles"] = [(r, mine[r]) for r in roles]
-    return board
+    return render(request, "cards/tournament_series.html", {
+        "series": series,
+        "tournament": series.run.tournament,
+        "state": state_payload(series),
+        "static": static_payload(series, request.user),
+        "action_url": reverse("cards:tournament_action", args=[series.pk]),
+    })
 
 
 @login_required
 @require_POST
-def tournament_lineup(request, pk):
+def tournament_action(request, pk):
+    """Un coup : {"type": "lineup", "picks": {poste: carte}} | {"type": "ban",
+    "champion": id} | {"type": "pick", "champion": id, "role": poste}.
+    Renvoie le nouvel état (et ce qui ne change plus, après le choix des joueurs)."""
     series = _series(request, pk)
     try:
-        game.set_lineup(request.user, series, {r: request.POST.get(r) for r in ROLES})
-    except GameError as exc:
-        messages.error(request, str(exc))
-    return redirect("cards:tournament_series", pk=series.pk)
-
-
-@login_required
-@require_POST
-def tournament_draft(request, pk):
-    series = _series(request, pk)
-    choice = request.POST.get("choice", "")
-    role, _, champion = choice.partition("|") if "|" in choice else (None, "", choice)
-    champion = request.POST.get("champion") or champion
-    role = request.POST.get("role") or role
+        data = json.loads(request.body or b"{}")
+    except ValueError:
+        return JsonResponse({"error": "Requête illisible."}, status=400)
+    kind = data.get("type")
+    played = None
     try:
-        played = game.draft_action(request.user, series, champion, role=role)
+        if kind == "lineup":
+            game.set_lineup(request.user, series, data.get("picks") or {})
+        elif kind in {"ban", "pick"}:
+            state = game.draft_state(series)
+            if state["turn"] and state["turn"]["type"] != kind:
+                raise GameError("Ce n'est pas le moment.")
+            played = game.draft_action(request.user, series, data.get("champion"), role=data.get("role"))
+        else:
+            return JsonResponse({"error": "Coup inconnu."}, status=400)
     except GameError as exc:
-        messages.error(request, str(exc))
-        return redirect("cards:tournament_series", pk=series.pk)
-    url = reverse("cards:tournament_series", args=[series.pk])
-    return redirect(url + (f"#partie-{played['number']}" if played else "#draft"))
+        series = _series(request, pk)
+        return JsonResponse({"error": str(exc), "state": state_payload(series)}, status=409)
+    series = _series(request, pk)
+    response = {"state": state_payload(series), "played": played["number"] if played else None}
+    if kind == "lineup":
+        response["static"] = static_payload(series, request.user)
+    return JsonResponse(response)

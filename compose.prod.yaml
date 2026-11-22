@@ -103,7 +103,9 @@ services:
 
   worker:
     <<: *app
-    command: celery -A config worker --loglevel=info --concurrency=2
+    # Les imports passent après les pages : priorité basse (nice), et un
+    # seul calcul à la fois par défaut (WORKER_CONCURRENCY).
+    command: nice -n 15 celery -A config worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-1}
     depends_on:
       migrate:
         condition: service_completed_successfully

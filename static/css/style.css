@@ -621,3 +621,22 @@ a.gift { color: inherit; text-decoration: none; }
   .champ-grid { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); max-height: 360px; }
   .champ-tile img { width: 44px; height: 44px; }
 }
+
+/* Bo5 en JavaScript : cartes compactes, onglets, tuiles-boutons. */
+.mini-card { display: flex; flex-direction: column; gap: 3px; padding: 8px; background: var(--rift);
+  border-top: 3px solid var(--rarity); min-width: 0; }
+.mini-card.is-empty { align-items: center; justify-content: center; min-height: 160px; color: var(--muted, #8a96ad); }
+.mc-photo { position: relative; aspect-ratio: 1 / 1; overflow: hidden;
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--rarity) 35%, #1a2338), #0a1020 75%); }
+.mc-photo img { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; display: block; }
+.mc-photo .nophoto { position: absolute; inset: 0; display: grid; place-items: center; font: 800 2rem/1 var(--display); color: var(--rarity); }
+.mc-ovr { position: absolute; top: 4px; left: 6px; font: 800 1.3rem/1 var(--display); color: var(--rarity); text-shadow: 0 1px 6px rgba(0,0,0,.8); }
+.mc-name { font: 700 1rem/1.1 var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-card small { font-size: .72rem; color: var(--muted, #8a96ad); }
+.bo5-result .mini-card { width: 170px; }
+button.draft-role { border: 0; color: inherit; font: inherit; }
+.draft-role.is-active { outline: 2px solid var(--gold, #e2b35a); background: rgba(226,179,90,.1); }
+button.champ-tile { color: inherit; font: inherit; }
+.game-card.is-new { animation: game-in .6s ease; }
+@keyframes game-in { from { transform: translateY(8px); opacity: .3; } }
+@media (prefers-reduced-motion: reduce) { .game-card.is-new { animation: none; } }

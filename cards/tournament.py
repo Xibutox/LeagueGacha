@@ -228,10 +228,13 @@ def start_series(user, tournament: Tournament, now=None) -> TournamentSeries:
         lineup = opponent_cards(tournament.split, team_id)
         if len(lineup) < len(ROLES):
             raise GameError("Cette équipe n'a plus de cinq complet : préviens l'admin.")
-        return TournamentSeries.objects.create(
+        series = TournamentSeries(
             run=run, step=run.step, team_id=team_id, opponent=lineup,
             opponent_rarity=rarity_for_step(run.step, total),
         )
+        prepare(series)
+        series.save()
+        return series
 
 
 def set_lineup(user, series: TournamentSeries, picks: dict) -> TournamentSeries:
@@ -264,6 +267,7 @@ def set_lineup(user, series: TournamentSeries, picks: dict) -> TournamentSeries:
     series.lineup_rarities = {role: owned[cid].pk for role, cid in card_ids.items()}
     series.status = TournamentSeries.Status.DRAFT
     series.draft = new_draft(series)
+    prepare(series)
     _advance(series)  # côté rouge : l'adversaire commence
     series.save()
     return series
@@ -342,26 +346,54 @@ def draft_state(series: TournamentSeries) -> dict:
     return out
 
 
-def _opponent_pool(series: TournamentSeries, card: Card, taken: set[int], by_name: dict) -> list[tuple[int, int]]:
-    """Ce que ce joueur adverse peut prendre : ses champions du tournoi,
-    pondérés par le nombre de parties ; sinon son historique."""
-    played = (
-        GameAppearance.objects.filter(tournament__split=card.split_id, player=card.player_id)
-        .values("champion").annotate(n=Count("id"))
-    )
-    pool = [(by_name.get(r["champion"]), r["n"]) for r in played]
-    pool = [(cid, n) for cid, n in pool if cid and cid not in taken]
-    if not pool:
-        history = (
-            CardChampion.objects.filter(card__player=card.player_id)
-            .values("champion").annotate(n=Count("id"))
-        )
-        pool = [(r["champion"], r["n"]) for r in history if r["champion"] not in taken]
-    return pool
+def champion_ids_by_name() -> dict[str, int]:
+    found = cache.get("champions:by-name")
+    if found is None:
+        found = dict(Champion.objects.values_list("name", "pk"))
+        cache.set("champions:by-name", found, 3600)
+    return found
+
+
+def prepare(series: TournamentSeries) -> dict:
+    """Ce que l'adversaire virtuel sait du Bo5, calculé une seule fois (puis
+    gardé dans series.prepared) : pour chacun de ses joueurs, les champions
+    joués pendant le tournoi et combien de fois (sinon son historique) ;
+    et les meilleurs champions des joueurs du site, ses cibles de ban."""
+    if series.prepared.get("pools") and (series.prepared.get("targets") or not series.lineup):
+        return series.prepared
+    by_name = champion_ids_by_name()
+    prepared = dict(series.prepared)
+    if not prepared.get("pools"):
+        cards = Card.objects.in_bulk([int(c) for c in series.opponent.values()])
+        pools = {}
+        for role in ROLES:
+            card = cards[int(series.opponent[role])]
+            played = (
+                GameAppearance.objects.filter(tournament__split=card.split_id, player=card.player_id)
+                .values("champion").annotate(n=Count("id")).order_by("-n")
+            )
+            pool = [[by_name[r["champion"]], r["n"]] for r in played if r["champion"] in by_name]
+            if not pool:
+                pool = [
+                    [cid, n] for cid, n in CardChampion.objects.filter(card__player=card.player_id)
+                    .values("champion").annotate(n=Count("id")).values_list("champion", "n")
+                ]
+            pools[role] = pool
+        prepared["pools"] = pools
+    if series.lineup and not prepared.get("targets"):
+        prepared["targets"] = {
+            role: list(
+                CardChampion.objects.filter(card_id=int(series.lineup[role]), games__gt=0)
+                .order_by("-rating").values_list("champion_id", flat=True)[:12]
+            )
+            for role in ROLES
+        }
+    series.prepared = prepared
+    return prepared
 
 
 def opponent_action(series: TournamentSeries, state: dict, kind: str, rng=None) -> dict:
-    """Le coup de l'adversaire virtuel.
+    """Le coup de l'adversaire virtuel (sans requête : tout est préparé).
 
     Pick : un de ses postes encore libres et un champion tiré parmi ce que
     ce joueur a joué pendant le tournoi (plus il l'a joué, plus il a de
@@ -369,29 +401,26 @@ def opponent_action(series: TournamentSeries, state: dict, kind: str, rng=None) 
     du site encore sans champion."""
     rng = rng or random
     taken = state["taken"]
-    by_name = {c.name: c.pk for c in Champion.objects.all()}
+    prepared = prepare(series)
     if kind == "pick":
-        cards = Card.objects.in_bulk([int(c) for c in series.opponent.values()])
-        options = []
-        for role in ROLES:
-            if role in state["picks"]["opponent"]:
-                continue
-            card = cards[int(series.opponent[role])]
-            options += [(role, cid, n) for cid, n in _opponent_pool(series, card, taken, by_name)]
+        options = [
+            (role, cid, n)
+            for role in ROLES if role not in state["picks"]["opponent"]
+            for cid, n in prepared["pools"].get(role, []) if cid not in taken
+        ]
         if options:
             role, champion, _ = rng.choices(options, weights=[n for *_, n in options])[0]
         else:
             role = next(r for r in ROLES if r not in state["picks"]["opponent"])
-            champion = rng.choice([cid for cid in by_name.values() if cid not in taken])
+            champion = rng.choice([cid for cid in champion_ids_by_name().values() if cid not in taken])
         return {"team": "opponent", "type": "pick", "champion": champion, "role": role}
 
     open_roles = [r for r in ROLES if r not in state["picks"]["user"]] or ROLES
-    targets = (
-        CardChampion.objects.filter(card_id__in=[int(series.lineup[r]) for r in open_roles], games__gt=0)
-        .exclude(champion_id__in=taken).order_by("-rating").values_list("champion_id", flat=True)[:3]
-    )
-    targets = list(targets) or [cid for cid in by_name.values() if cid not in taken]
-    return {"team": "opponent", "type": "ban", "champion": rng.choice(targets), "role": None}
+    targets = prepared.get("targets") or {}
+    best = [cid for r in open_roles for cid in targets.get(r, [])[:4] if cid not in taken]
+    best = best or [cid for cid in champion_ids_by_name().values() if cid not in taken]
+    return {"team": "opponent", "type": "ban", "champion": rng.choice(best[:3] if len(best) > 3 else best),
+            "role": None}
 
 
 def _advance(series: TournamentSeries, rng=None, now=None) -> dict | None:

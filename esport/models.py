@@ -226,6 +226,8 @@ class GameAppearance(models.Model):
             models.Index(fields=["team", "tournament"], name="appearance_team_tournament"),
             # Les face-à-face de champions (mode tournoi).
             models.Index(fields=["role", "champion"], name="appearance_role_champion"),
+            # Les duos de champions (cohérence des compositions).
+            models.Index(fields=["champion", "game_id"], name="appearance_champion_game"),
         ]
 
     def __str__(self):
