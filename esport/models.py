@@ -203,13 +203,15 @@ class GameAppearance(models.Model):
     kills = models.PositiveIntegerField("kills", default=0)
     deaths = models.PositiveIntegerField("morts", default=0)
     assists = models.PositiveIntegerField("assists", default=0)
-    gold = models.PositiveIntegerField("gold", default=0)
-    cs = models.PositiveIntegerField("CS", default=0)
-    damage = models.PositiveIntegerField("dégâts aux champions", default=0)
+    gold = models.PositiveIntegerField("gold", null=True, blank=True)
+    cs = models.PositiveIntegerField("CS", null=True, blank=True)
+    damage = models.PositiveIntegerField(
+        "dégâts aux champions", null=True, blank=True, help_text="Vide : Leaguepedia ne l'a pas (anciennes saisons)."
+    )
     vision_score = models.PositiveIntegerField("score de vision", null=True, blank=True)
-    team_kills = models.PositiveIntegerField("kills de l'équipe", default=0)
-    team_gold = models.PositiveIntegerField("gold de l'équipe", default=0)
-    team_damage = models.PositiveIntegerField("dégâts de l'équipe", default=0)
+    team_kills = models.PositiveIntegerField("kills de l'équipe", null=True, blank=True)
+    team_gold = models.PositiveIntegerField("gold de l'équipe", null=True, blank=True)
+    team_damage = models.PositiveIntegerField("dégâts de l'équipe", null=True, blank=True)
     game_length = models.FloatField("durée (min)", null=True, blank=True)
     rating = models.FloatField(
         "note de la partie", null=True, blank=True, help_text="0–100 ; 50 = partie moyenne d'un pro du même rôle."
@@ -250,13 +252,13 @@ class PlayerSplitStats(models.Model):
     assists = models.PositiveIntegerField("assists", default=0)
     win_rate = models.FloatField("% victoires", default=0)
     kda = models.FloatField("KDA", default=0)
-    kill_participation = models.FloatField("KP", default=0)
-    cs_per_min = models.FloatField("CS/min", default=0)
-    gold_per_min = models.FloatField("gold/min", default=0)
-    damage_per_min = models.FloatField("DPM", default=0)
-    vision_per_min = models.FloatField("vision/min", default=0)
-    damage_share = models.FloatField("part des dégâts", default=0)
-    gold_share = models.FloatField("part du gold", default=0)
+    kill_participation = models.FloatField("KP", null=True, blank=True)
+    cs_per_min = models.FloatField("CS/min", null=True, blank=True)
+    gold_per_min = models.FloatField("gold/min", null=True, blank=True)
+    damage_per_min = models.FloatField("DPM", null=True, blank=True)
+    vision_per_min = models.FloatField("vision/min", null=True, blank=True)
+    damage_share = models.FloatField("part des dégâts", null=True, blank=True)
+    gold_share = models.FloatField("part du gold", null=True, blank=True)
     champions = models.JSONField("champions joués", default=list, blank=True)
     score = models.FloatField(
         "note", default=0, help_text="0–100 ; 50 = pro moyen du même rôle (moyenne des parties, pondérée)."

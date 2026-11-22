@@ -257,7 +257,7 @@ class CardResource(ModelResource):
             return "-"
         return (
             f"{s.games} parties, {s.win_rate:g} % V, KDA {s.kda:g}, "
-            f"DPM {s.damage_per_min:g}, percentile {s.percentile:g}"
+            f"DPM {s.damage_per_min if s.damage_per_min is not None else '—'}, percentile {s.percentile:g}"
         )
 
     @action(

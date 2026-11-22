@@ -24,6 +24,13 @@ def parse_int(value, default=0):
         return default
 
 
+def parse_optional_int(value):
+    """Un entier, ou None si Leaguepedia n'a pas la donnée (champ vide)."""
+    if value is None or str(value).strip() == "":
+        return None
+    return parse_int(value, default=None)
+
+
 def parse_float(value, default=None):
     try:
         return float(str(value).replace(",", "").strip())
@@ -86,23 +93,32 @@ def _div(a, b):
     return a / b if b else 0.0
 
 
+def _rate(rows: list[dict], top: str, bottom: str, scale: float = 1.0, digits: int = 1):
+    """Somme de `top` / somme de `bottom` sur les lignes qui ont les deux ;
+    None si aucune (donnée absente de Leaguepedia : ce n'est pas un zéro)."""
+    pairs = [(r[top], r[bottom]) for r in rows if r.get(top) is not None and r.get(bottom)]
+    if not pairs:
+        return None
+    return round(scale * sum(t for t, _ in pairs) / sum(b for _, b in pairs), digits)
+
+
 def aggregate_appearances(appearances: list[dict]) -> dict:
     """Agrège une liste de lignes de scoreboard d'UN joueur.
 
     Clés attendues par ligne : kills, deaths, assists, gold, cs, damage,
-    vision_score (peut être None), team_kills, team_gold, team_damage,
-    game_length (minutes, peut être None), win, role, team, champion.
+    vision_score, team_kills, team_gold, team_damage, game_length (minutes),
+    win, role, team, champion. Une donnée absente vaut None et ne compte pas
+    (les anciennes saisons n'ont ni dégâts ni vision) : la stat agrégée vaut
+    alors None, jamais un faux zéro.
     """
     games = len(appearances)
     kills = sum(a["kills"] for a in appearances)
     deaths = sum(a["deaths"] for a in appearances)
     assists = sum(a["assists"] for a in appearances)
     wins = sum(1 for a in appearances if a["win"])
-
-    timed = [a for a in appearances if a.get("game_length")]
-    minutes = sum(a["game_length"] for a in timed)
-    vision_rows = [a for a in timed if a.get("vision_score") is not None]
-    vision_minutes = sum(a["game_length"] for a in vision_rows)
+    for a in appearances:
+        a["kp_num"] = a["kills"] + a["assists"]
+        a["minutes"] = a.get("game_length") or None
 
     role = Counter(a["role"] for a in appearances if a.get("role")).most_common(1)
     team = Counter(a["team"] for a in appearances if a.get("team")).most_common(1)
@@ -116,20 +132,13 @@ def aggregate_appearances(appearances: list[dict]) -> dict:
         "assists": assists,
         "win_rate": round(100 * _div(wins, games), 1),
         "kda": round(_div(kills + assists, max(deaths, 1)), 2),
-        "kill_participation": round(
-            100 * _div(sum(a["kills"] + a["assists"] for a in appearances), sum(a["team_kills"] for a in appearances)),
-            1,
-        ),
-        "cs_per_min": round(_div(sum(a["cs"] for a in timed), minutes), 2),
-        "gold_per_min": round(_div(sum(a["gold"] for a in timed), minutes), 1),
-        "damage_per_min": round(_div(sum(a["damage"] for a in timed), minutes), 1),
-        "vision_per_min": round(_div(sum(a["vision_score"] for a in vision_rows), vision_minutes), 2),
-        "damage_share": round(
-            100 * _div(sum(a["damage"] for a in appearances), sum(a["team_damage"] for a in appearances)), 1
-        ),
-        "gold_share": round(
-            100 * _div(sum(a["gold"] for a in appearances), sum(a["team_gold"] for a in appearances)), 1
-        ),
+        "kill_participation": _rate(appearances, "kp_num", "team_kills", 100),
+        "cs_per_min": _rate(appearances, "cs", "minutes", digits=2),
+        "gold_per_min": _rate(appearances, "gold", "minutes"),
+        "damage_per_min": _rate(appearances, "damage", "minutes"),
+        "vision_per_min": _rate(appearances, "vision_score", "minutes", digits=2),
+        "damage_share": _rate(appearances, "damage", "team_damage", 100),
+        "gold_share": _rate(appearances, "gold", "team_gold", 100),
         "role": role[0][0] if role else "",
         "team": team[0][0] if team else None,
         "champions": [{"name": name, "games": count} for name, count in champions],
@@ -198,36 +207,42 @@ SLOPE = 0.8
 
 def game_metrics(row: dict) -> dict:
     """Les métriques d'une partie (ligne de scoreboard). None quand la
-    donnée manque (durée ou vision inconnues)."""
+    donnée manque (durée, dégâts, vision, or… absents des anciennes saisons) :
+    la métrique est alors ignorée, pas comptée comme un zéro."""
     minutes = row.get("game_length") or None
+    damage, gold, cs = row.get("damage"), row.get("gold"), row.get("cs")
+    team_kills, team_damage = row.get("team_kills"), row.get("team_damage")
+
+    def per_minute(value):
+        return value / minutes if minutes and value is not None else None
+
     metrics = {
         "kda": (row["kills"] + row["assists"]) / max(row["deaths"], 1),
-        "kp": _div(row["kills"] + row["assists"], row["team_kills"]) if row["team_kills"] else None,
-        "dmg_share": _div(row["damage"], row["team_damage"]) if row["team_damage"] else None,
-        "dmg_per_gold": _div(row["damage"], row["gold"]) if row["gold"] else None,
+        "kp": (row["kills"] + row["assists"]) / team_kills if team_kills else None,
+        "dmg_share": damage / team_damage if damage is not None and team_damage else None,
+        "dmg_per_gold": damage / gold if damage is not None and gold else None,
         "win": 1.0 if row["win"] else 0.0,
-        "deaths_pm": None,
-        "dpm": None,
-        "cspm": None,
-        "gpm": None,
-        "vspm": None,
+        "deaths_pm": per_minute(row["deaths"]),
+        "dpm": per_minute(damage),
+        "cspm": per_minute(cs),
+        "gpm": per_minute(gold),
+        "vspm": per_minute(row.get("vision_score")),
     }
-    if minutes:
-        metrics.update(
-            deaths_pm=row["deaths"] / minutes,
-            dpm=row["damage"] / minutes,
-            cspm=row["cs"] / minutes,
-            gpm=row["gold"] / minutes,
-            vspm=(row["vision_score"] / minutes) if row.get("vision_score") is not None else None,
-        )
     # Le KDA explose avec 0 mort : on l'écrase en log.
     metrics["kda"] = math.log1p(metrics["kda"])
     return metrics
 
 
-def reference(rows: list[dict]) -> dict:
+#: Sous ce nombre de parties, une métrique d'un rôle sur une année est
+#: comparée à la référence toutes années confondues.
+REFERENCE_MIN_SAMPLES = 150
+
+
+def reference(rows: list[dict], fallback: dict | None = None, min_samples: int = REFERENCE_MIN_SAMPLES) -> dict:
     """Moyenne et écart-type de chaque métrique, par rôle : la « partie
-    moyenne d'un pro » à laquelle chaque partie est comparée."""
+    moyenne d'un pro » à laquelle chaque partie est comparée. Avec
+    `fallback`, une métrique trop peu renseignée (moins de min_samples
+    parties) reprend la valeur de fallback."""
     values: dict = {}
     for row in rows:
         role = row.get("role") or "?"
@@ -238,9 +253,16 @@ def reference(rows: list[dict]) -> dict:
     for role, metrics in values.items():
         ref[role] = {}
         for metric, vals in metrics.items():
+            if fallback is not None and len(vals) < min_samples and metric in fallback.get(role, {}):
+                ref[role][metric] = fallback[role][metric]
+                continue
             mean = sum(vals) / len(vals)
             var = sum((v - mean) ** 2 for v in vals) / len(vals)
             ref[role][metric] = (mean, math.sqrt(var))
+    if fallback:
+        for role, metrics in fallback.items():
+            for metric, pair in metrics.items():
+                ref.setdefault(role, {}).setdefault(metric, pair)
     return ref
 
 
@@ -279,7 +301,8 @@ SPLIT_STRETCH = 2.5
 #: La version du calcul des notes. À augmenter quand il change : au
 #: démarrage suivant, tout est recalculé (recompute_cards --si-besoin).
 #: 2 : prestige des ligues. 3 : prestige plus marqué, internationaux sans correction.
-SCORING_VERSION = 3
+#: 4 : données absentes ignorées (plus de faux zéros), référence par année.
+SCORING_VERSION = 4
 
 
 def split_rating(game_scores: list[float], prior_games: int = PRIOR_GAMES, prior_mean: float = 50.0) -> float:

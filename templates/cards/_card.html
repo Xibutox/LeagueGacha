@@ -20,7 +20,9 @@
   {% if card.stats %}
   <div class="lcard-stats">
     <div><b>{{ card.stats.kda|floatformat:1 }}</b><small>KDA</small></div>
-    <div><b>{{ card.stats.damage_per_min|floatformat:0 }}</b><small>DPM</small></div>
+    {% if card.stats.damage_per_min is not None %}<div><b>{{ card.stats.damage_per_min|floatformat:0 }}</b><small>DPM</small></div>
+    {% elif card.stats.cs_per_min is not None %}<div title="Dégâts inconnus pour cette saison"><b>{{ card.stats.cs_per_min|floatformat:1 }}</b><small>CS/min</small></div>
+    {% else %}<div title="Donnée absente de Leaguepedia pour cette saison"><b>—</b><small>DPM</small></div>{% endif %}
     <div><b>{{ card.stats.win_rate|floatformat:0 }}%</b><small>Victoires</small></div>
   </div>
   {% endif %}

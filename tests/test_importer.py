@@ -173,3 +173,34 @@ def test_a_blocked_cdn_stops_after_a_few_refusals_and_cards_still_exist():
     assert importer.images_blocked
     assert client.downloads == LeaguepediaImporter.MAX_IMAGE_FAILURES
     assert any("refuse toutes les images" in line for line in lines)
+
+
+def test_an_old_season_without_damage_keeps_empty_values_not_zeros(monkeypatch):
+    """Leaguepedia n'a ni dégâts, ni vision, ni totaux d'équipe pour les
+    anciennes saisons : ce sont des données absentes, pas des zéros."""
+    import tests.test_importer as me
+
+    original = me.scoreboard
+
+    def old_scoreboard():
+        rows = original()
+        for r in rows:
+            r.update(Damage="", VisionScore="", TeamKills="", TeamGold="")
+        return rows
+
+    monkeypatch.setattr(me, "scoreboard", old_scoreboard)
+    ensure_default_rarities()
+    importer = LeaguepediaImporter(client=FakeClient(), log=lambda m: None)
+    importer.save_tournaments(importer.discover_tournaments("LEC", 2025))
+    split = Split.objects.get()
+    importer.import_split(split, with_images=False)
+
+    row = GameAppearance.objects.filter(player__overview_page="G2Mid").first()
+    assert row.damage is None and row.team_damage is None and row.vision_score is None
+    # Les totaux d'équipe se recalculent depuis les cinq joueurs.
+    g2 = GameAppearance.objects.filter(game_id=row.game_id, team=row.team)
+    assert row.team_kills == sum(a.kills for a in g2) and row.team_gold == 5 * 11000
+    stats = PlayerSplitStats.objects.get(split=split, player__overview_page="G2Mid")
+    assert stats.damage_per_min is None and stats.damage_share is None
+    assert stats.kill_participation and stats.cs_per_min
+    assert 0 < stats.score < 100

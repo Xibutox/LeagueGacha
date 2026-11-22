@@ -17,6 +17,7 @@ from collections import defaultdict
 from django.conf import settings
 from django.core.files.base import ContentFile
 from django.db import transaction
+from django.db.models import Count
 from django.utils import timezone
 from django.utils.text import slugify
 
@@ -238,9 +239,16 @@ class LeaguepediaImporter:
         links = {r["Link"] or r["Name"]: r["Name"] for r in rows if r.get("Link") or r.get("Name")}
         players = self.sync_players(links)
 
-        team_damage: dict[tuple, int] = defaultdict(int)
+        # Les totaux d'équipe : ceux de Leaguepedia, sinon la somme des cinq
+        # joueurs ; None si un joueur n'a pas la donnée (anciennes saisons :
+        # ni dégâts, ni kills ou or d'équipe), pour ne pas inventer de zéros.
+        by_team: dict[tuple, list[dict]] = defaultdict(list)
         for r in rows:
-            team_damage[(r["GameId"], r["Team"])] += scoring.parse_int(r.get("Damage"))
+            by_team[(r["GameId"], r.get("Team"))].append(r)
+
+        def team_total(key, field):
+            values = [scoring.parse_optional_int(r.get(field)) for r in by_team[key]]
+            return None if not values or None in values else sum(values)
 
         teams = {}
         for name in {r["Team"] for r in rows if r.get("Team")}:
@@ -269,13 +277,15 @@ class LeaguepediaImporter:
                     kills=scoring.parse_int(r.get("Kills")),
                     deaths=scoring.parse_int(r.get("Deaths")),
                     assists=scoring.parse_int(r.get("Assists")),
-                    gold=scoring.parse_int(r.get("Gold")),
-                    cs=scoring.parse_int(r.get("CS")),
-                    damage=scoring.parse_int(r.get("Damage")),
-                    vision_score=scoring.parse_int(vision, default=None) if vision not in (None, "") else None,
-                    team_kills=scoring.parse_int(r.get("TeamKills")),
-                    team_gold=scoring.parse_int(r.get("TeamGold")),
-                    team_damage=team_damage[(r["GameId"], r["Team"])],
+                    gold=scoring.parse_optional_int(r.get("Gold")),
+                    cs=scoring.parse_optional_int(r.get("CS")),
+                    damage=scoring.parse_optional_int(r.get("Damage")),
+                    vision_score=scoring.parse_optional_int(vision),
+                    team_kills=scoring.parse_optional_int(r.get("TeamKills"))
+                    or team_total((r["GameId"], r.get("Team")), "Kills"),
+                    team_gold=scoring.parse_optional_int(r.get("TeamGold"))
+                    or team_total((r["GameId"], r.get("Team")), "Gold"),
+                    team_damage=team_total((r["GameId"], r.get("Team")), "Damage"),
                     game_length=scoring.parse_float(r.get("GameLength")),
                     played_at=scoring.parse_datetime_utc(r.get("DateTimeUTC")),
                 )
@@ -478,16 +488,47 @@ class LeaguepediaImporter:
             "champion": a.champion,
         }
 
+    _ROW_FIELDS = (
+        "kills", "deaths", "assists", "gold", "cs", "damage", "vision_score", "team_kills",
+        "team_gold", "team_damage", "game_length", "win", "role", "team_id", "champion",
+    )
+
+    @classmethod
+    def reference_for(cls, year: int | None) -> dict:
+        """La « partie moyenne » à laquelle on compare : celle des pros de la
+        même année (le jeu change : durée des parties, dégâts…), rôle par
+        rôle ; une métrique trop peu renseignée cette année-là reprend la
+        référence toutes années confondues. Gardée en cache tant que les
+        parties de l'année ne changent pas (un recalcul complet ne la
+        calcule qu'une fois par année)."""
+        from django.core.cache import cache
+        from django.db.models import Max
+
+        def signature(qs):
+            agg = qs.aggregate(n=Count("id"), last=Max("id"))
+            return f"{agg['n']}-{agg['last']}"
+
+        everything = GameAppearance.objects.all()
+        global_key = f"reference:v{scoring.SCORING_VERSION}:all:{signature(everything)}"
+        overall = cache.get(global_key)
+        if overall is None:
+            overall = scoring.reference([cls._row(a) for a in everything.only(*cls._ROW_FIELDS).iterator(2000)])
+            cache.set(global_key, overall, 7 * 24 * 3600)
+        if not year:
+            return overall
+        of_year = GameAppearance.objects.filter(tournament__split__year=year)
+        key = f"reference:v{scoring.SCORING_VERSION}:{year}:{signature(of_year)}:{global_key[-24:]}"
+        ref = cache.get(key)
+        if ref is None:
+            ref = scoring.reference([cls._row(a) for a in of_year.only(*cls._ROW_FIELDS).iterator(2000)], fallback=overall)
+            cache.set(key, ref, 7 * 24 * 3600)
+        return ref
+
     @classmethod
     def compute_split_stats(cls, split: Split) -> int:
-        """Note chaque partie du split (par rapport à toutes les parties
-        importées, rôle par rôle), puis agrège par joueur."""
-        reference = scoring.reference(
-            [cls._row(a) for a in GameAppearance.objects.only(
-                "kills", "deaths", "assists", "gold", "cs", "damage", "vision_score", "team_kills",
-                "team_gold", "team_damage", "game_length", "win", "role", "team_id", "champion",
-            )]
-        )
+        """Note chaque partie du split par rapport aux pros du même rôle la
+        même année, puis agrège par joueur."""
+        reference = cls.reference_for(split.year)
         appearances = list(
             GameAppearance.objects.filter(tournament__split=split).select_related("tournament__league").order_by("played_at")
         )

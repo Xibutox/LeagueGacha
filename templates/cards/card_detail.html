@@ -51,12 +51,13 @@
     <table class="kv">
       <tr><th>Victoires</th><td>{{ s.wins }} sur {{ s.games }} ({{ s.win_rate }} %)</td></tr>
       <tr><th>K / D / A</th><td>{{ s.kills }} / {{ s.deaths }} / {{ s.assists }} (KDA {{ s.kda }})</td></tr>
-      <tr><th>Participation aux kills</th><td>{{ s.kill_participation }} %</td></tr>
-      <tr><th>CS par minute</th><td>{{ s.cs_per_min }}</td></tr>
-      <tr><th>Gold par minute</th><td>{{ s.gold_per_min }} ({{ s.gold_share }} % de l'équipe)</td></tr>
-      <tr><th>Dégâts par minute</th><td>{{ s.damage_per_min }} ({{ s.damage_share }} % de l'équipe)</td></tr>
-      <tr><th>Vision par minute</th><td>{{ s.vision_per_min }}</td></tr>
+      <tr><th>Participation aux kills</th><td>{% if s.kill_participation is not None %}{{ s.kill_participation }} %{% else %}—{% endif %}</td></tr>
+      <tr><th>CS par minute</th><td>{{ s.cs_per_min|default_if_none:"—" }}</td></tr>
+      <tr><th>Gold par minute</th><td>{{ s.gold_per_min|default_if_none:"—" }}{% if s.gold_share is not None %} ({{ s.gold_share }} % de l'équipe){% endif %}</td></tr>
+      <tr><th>Dégâts par minute</th><td>{{ s.damage_per_min|default_if_none:"—" }}{% if s.damage_share is not None %} ({{ s.damage_share }} % de l'équipe){% endif %}</td></tr>
+      <tr><th>Vision par minute</th><td>{{ s.vision_per_min|default_if_none:"—" }}</td></tr>
     </table>
+    {% if s.damage_per_min is None or s.vision_per_min is None %}<p class="small muted">« — » : Leaguepedia ne fournit pas cette donnée pour cette saison ; elle ne compte pas dans la note (ni en bien, ni en mal).</p>{% endif %}
     {% endwith %}
     {% endif %}
 

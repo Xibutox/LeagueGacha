@@ -147,8 +147,35 @@ class ScoringTests(unittest.TestCase):
 
     def test_missing_game_length_and_vision(self):
         agg = scoring.aggregate_appearances([row(game_length=None, vision_score=None)])
-        self.assertEqual(agg["cs_per_min"], 0)
-        self.assertEqual(agg["vision_per_min"], 0)
+        self.assertIsNone(agg["cs_per_min"])  # inconnu, pas zéro
+        self.assertIsNone(agg["vision_per_min"])
+
+    def test_missing_damage_is_not_a_zero(self):
+        """Les anciennes saisons n'ont pas de dégâts sur Leaguepedia : ni DPM
+        à zéro, ni note plombée."""
+        old = row(damage=None, team_damage=None, vision_score=None)
+        agg = scoring.aggregate_appearances([old, row()])
+        self.assertEqual(agg["damage_per_min"], round(row()["damage"] / row()["game_length"], 1))
+        self.assertIsNone(scoring.aggregate_appearances([old])["damage_per_min"])
+        self.assertIsNone(scoring.aggregate_appearances([old])["damage_share"])
+        metrics = scoring.game_metrics(old)
+        self.assertIsNone(metrics["dpm"])
+        self.assertIsNone(metrics["dmg_share"])
+        self.assertIsNone(metrics["dmg_per_gold"])
+
+        games = [row(kills=k, deaths=2, damage=10000 + 1000 * k) for k in range(5)]
+        ref = scoring.reference(games)
+        with_damage, _ = scoring.game_rating(games[2], ref)
+        without, zs = scoring.game_rating(dict(games[2], damage=None, team_damage=None), ref)
+        self.assertNotIn("dpm", zs)
+        self.assertAlmostEqual(with_damage, without, delta=12)  # pas d'effondrement
+
+    def test_the_reference_falls_back_when_a_metric_is_rare(self):
+        modern = [row(kills=k, damage=20000 + 1000 * k) for k in range(5)]
+        old = [row(kills=k, damage=None, team_damage=None) for k in range(5)]
+        overall = scoring.reference(modern + old)
+        year = scoring.reference(old, fallback=overall, min_samples=3)
+        self.assertEqual(year["Mid"]["dpm"], overall["Mid"]["dpm"])  # pas de dégâts cette année-là
 
     def test_an_average_game_scores_50(self):
         games = [row(kills=k, deaths=2, damage=10000 + 1000 * k) for k in range(5)]
