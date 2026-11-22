@@ -58,6 +58,21 @@ def _team_option(team_id: int, names: dict) -> dict:
     return {"id": str(team_id), "label": names.get(team_id, "?")}
 
 
+def _unique(options: list[dict], keep=()) -> list[dict]:
+    """Jamais deux fois la même réponse proposée (même identifiant ou même
+    nom) ; en cas de doublon, une bonne réponse (keep) est gardée."""
+    keep = set(keep)
+    seen_ids, seen_labels, kept = set(), set(), set()
+    for o in sorted(options, key=lambda o: o["id"] not in keep):
+        label = o["label"].strip().lower()
+        if o["id"] in seen_ids or label in seen_labels:
+            continue
+        seen_ids.add(o["id"])
+        seen_labels.add(label)
+        kept.add(id(o))
+    return [o for o in options if id(o) in kept]
+
+
 def winner_question(rng) -> dict | None:
     """Qui a remporté… ? Des playoffs d'une ligue majeure, ou une compétition
     internationale (le vainqueur de sa dernière partie)."""
@@ -73,7 +88,9 @@ def winner_question(rng) -> dict | None:
         if found is None:
             continue
         title, games, final = found
-        teams = list(games.exclude(team__isnull=True).values_list("team", flat=True).distinct())
+        # order_by() : sans lui, le tri par défaut des parties (date) entre dans
+        # le DISTINCT et une équipe revient une fois par partie jouée.
+        teams = list(games.exclude(team__isnull=True).order_by().values_list("team", flat=True).distinct())
         if len(teams) < 3:
             continue
         others = [t for t in teams if t != final.team_id]
@@ -85,7 +102,7 @@ def winner_question(rng) -> dict | None:
             "kind": "winner",
             "title": "Le vainqueur",
             "text": f"Qui a remporté {title} ?",
-            "options": [_team_option(t, names) for t in options],
+            "options": _unique([_team_option(t, names) for t in options], keep=[str(final.team_id)]),
             "answer": [str(final.team_id)],
             "pick": 1,
             "attempts": WINNER_ATTEMPTS,
@@ -166,7 +183,8 @@ def roster_question(rng) -> dict | None:
             "kind": "roster",
             "title": "Le roster",
             "text": f"Retrouve les 5 joueurs de {team.name}, {label} de {split.name}.",
-            "options": [{"id": str(c.player_id), "label": c.player.ign, "sub": c.role} for c in options],
+            "options": _unique([{"id": str(c.player_id), "label": c.player.ign, "sub": c.role} for c in options],
+                               keep=[str(c.player_id) for c in answer]),
             "answer": [str(c.player_id) for c in answer],
             "pick": len(ROLES),
             "attempts": 1,
@@ -196,13 +214,13 @@ def career_question(rng) -> dict | None:
         )
         if len(rows) < 2 or rows[0]["n"] == rows[1]["n"]:
             continue  # pas d'équipe principale nette
-        teams = [r["team"] for r in rows[:CAREER_OPTIONS]]
+        teams = list(dict.fromkeys(r["team"] for r in rows[:CAREER_OPTIONS]))
         if len(teams) < CAREER_OPTIONS:
             popular = (
                 GameAppearance.objects.filter(team__isnull=False).exclude(team__in=teams)
                 .values("team").annotate(n=Count("id")).order_by("-n").values_list("team", flat=True)[:30]
             )
-            extra = list(popular)
+            extra = list(dict.fromkeys(popular))
             rng.shuffle(extra)
             teams += extra[: CAREER_OPTIONS - len(teams)]
         rng.shuffle(teams)
@@ -212,7 +230,7 @@ def career_question(rng) -> dict | None:
             "kind": "career",
             "title": "La carrière",
             "text": f"Dans quelle équipe {player.ign} a-t-il joué le plus de parties ?",
-            "options": [_team_option(t, names) for t in teams],
+            "options": _unique([_team_option(t, names) for t in teams], keep=[str(rows[0]["team"])]),
             "answer": [str(rows[0]["team"])],
             "pick": 1,
             "attempts": 1,

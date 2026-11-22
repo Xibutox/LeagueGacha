@@ -284,8 +284,8 @@ def matchup(role: str, champion: str, opposite: str) -> dict:
     if found is None:
         theirs = GameAppearance.objects.filter(role=role, champion=opposite).values("game_id")
         rows = GameAppearance.objects.filter(role=role, champion=champion, game_id__in=theirs)
-        games = rows.values("game_id").distinct().count()
-        wins = rows.filter(win=True).values("game_id").distinct().count()
+        games = rows.order_by().values("game_id").distinct().count()
+        wins = rows.filter(win=True).order_by().values("game_id").distinct().count()
         found = {"games": games, "wins": wins}
         cache.set(key, found, 24 * 3600)
     rate = (found["wins"] + MATCHUP_PRIOR / 2) / (found["games"] + MATCHUP_PRIOR)

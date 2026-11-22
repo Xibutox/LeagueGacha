@@ -48,6 +48,17 @@ def test_the_three_questions(history):
     career = quiz.career_question(rng)
     assert career["answer"] == [str(history["g2"].pk)]  # 6 parties chez G2, 2 chez T1, 1 chez Fnatic
     assert str(history["player"].ign) in career["text"]
+    for question in (winner, roster, career):  # jamais deux fois la même proposition
+        ids = [o["id"] for o in question["options"]]
+        labels = [o["label"].lower() for o in question["options"]]
+        assert len(ids) == len(set(ids)) and len(labels) == len(set(labels))
+        assert set(question["answer"]) <= set(ids)
+
+
+def test_duplicate_proposals_are_removed_but_never_the_answer():
+    options = [{"id": "1", "label": "T1"}, {"id": "2", "label": "t1"}, {"id": "3", "label": "G2"},
+               {"id": "3", "label": "G2"}]
+    assert [o["id"] for o in quiz._unique(options, keep=["2"])] == ["2", "3"]
 
 
 def test_one_quiz_per_four_hours(history, bob):
