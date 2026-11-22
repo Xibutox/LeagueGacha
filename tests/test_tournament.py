@@ -293,20 +293,26 @@ def test_the_auto_mode_bans_their_favourite_and_picks_my_best(tourney, player):
     assert CardChampion.objects.get(card_id=card, champion_id=move["champion"]).rating == best.rating
 
 
-def test_each_game_has_a_special_rule_on_a_players_favourites(tourney, player):
+def test_each_game_has_a_special_rule_for_both_teams(tourney, player):
     series = game.start_series(player, tourney)
     game.set_lineup(player, series, lineup_for(player))
     series.refresh_from_db()
     special = series.draft["special"]
-    assert special["role"] in ROLES and special["year"] == tourney.split.year
-    assert 1 <= len(special["effects"]) <= 3
-    effect = special["effects"][0]
-    assert -8 <= effect["points"] <= 8 and 0 < effect["rate"] < 100
-    assert game.special_points({"special": special}, special["role"], effect["champion"]) == effect["points"]
-    other = next(r for r in ROLES if r != special["role"])
-    assert game.special_points({"special": special}, other, effect["champion"]) == 0
+    assert special["year"] == tourney.split.year
+    for team in ("user", "opponent"):
+        side = special[team]
+        assert side["role"] in ROLES and 1 <= len(side["effects"]) <= 3
+        effect = side["effects"][0]
+        assert -8 <= effect["points"] <= 8 and 0 < effect["rate"] < 100
+        assert game.special_points(special, team, side["role"], effect["champion"]) == effect["points"]
+        other = next(r for r in ROLES if r != side["role"])
+        assert game.special_points(special, team, other, effect["champion"]) == 0
+    # L'adversaire : ses préférés sont ce que son joueur a joué pendant le tournoi.
+    pool = [cid for cid, _ in game.prepare(series)["pools"][special["opponent"]["role"]]]
+    assert all(e["champion"] in pool for e in special["opponent"]["effects"])
 
     played = play_one_game(player, series, random.Random(5))
     assert played["special"] == special and len(played["actions"]) == 20
-    slot = played["user"][special["role"]]
-    assert slot["score"] == round(slot["base"] + slot["bonus"] + slot["special"], 1)
+    for team in ("user", "opponent"):
+        slot = played[team][special[team]["role"]]
+        assert slot["score"] == round(slot["base"] + slot["bonus"] + slot["special"], 1)

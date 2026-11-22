@@ -692,3 +692,4 @@ button.champ-tile { color: inherit; font: inherit; }
   .ranking .lineup-thumbs { grid-template-columns: repeat(5, minmax(0, 1fr)); min-width: 220px; }
   .thumb-meta { display: none; }
 }
+.special-side + .special-side { margin-top: 8px; } .special-side p { margin: 0 0 4px; font-size: .85rem; }

@@ -223,16 +223,24 @@
 
   function specialPanel(special) {
     if (!special) return null;
+    function line(side, who) {
+      if (!side) return null;
+      return h("div", { class: "special-side" }, [
+        h("p", {}, [h("b", { text: who }), " : la forme de " + side.player + " (" + side.role + ")"]),
+        h("div", { class: "special-list" }, side.effects.map(function (e) {
+          return h("span", { class: "special-effect " + (e.points > 0 ? "up" : (e.points < 0 ? "down" : "")) }, [
+            champ(e.champion).icon ? h("img", { src: champ(e.champion).icon, alt: "", class: "champ-icon tiny" }) : null,
+            e.name + " ", h("b", { text: (e.points > 0 ? "+" : "") + e.points }),
+            h("small", { class: "muted", text: " · " + e.rate + " % sur " + plural(e.games, "partie") }),
+          ]);
+        })),
+      ]);
+    }
     return h("div", { class: "special" }, [
       h("p", {}, [h("b", { text: "Particularité de la partie : " }),
-        "la forme de " + special.player + " (" + special.role + ") en " + special.year + ". Ses champions préférés gagnent ou perdent des points selon leur bilan cette année-là."]),
-      h("div", { class: "special-list" }, special.effects.map(function (e) {
-        return h("span", { class: "special-effect " + (e.points > 0 ? "up" : (e.points < 0 ? "down" : "")) }, [
-          champ(e.champion).icon ? h("img", { src: champ(e.champion).icon, alt: "", class: "champ-icon tiny" }) : null,
-          e.name + " ", h("b", { text: (e.points > 0 ? "+" : "") + e.points }),
-          h("small", { class: "muted", text: " · " + e.rate + " % sur " + plural(e.games, "partie") }),
-        ]);
-      })),
+        "dans chaque équipe, un joueur en vedette dont les champions préférés gagnent ou perdent des points selon leur bilan en " + special.year + ". Elle compte pour toi comme pour l'adversaire."]),
+      line(special.user, "Chez toi"),
+      line(special.opponent, "Chez " + state.team),
     ]);
   }
 
@@ -302,8 +310,9 @@
 
     var grid = h("div", { class: "champ-grid", role: "listbox", "aria-label": "Champions" }, tiles.map(function (t) {
       var note = isPick ? String(t.info.rating) : (t.hint.total ? "×" + t.hint.total : "");
-      var sp = isPick && d.special && d.special.role === ui.role
-        ? d.special.effects.filter(function (e) { return e.champion === t.c.id; })[0] : null;
+      var mineSp = d.special && d.special.user;
+      var sp = isPick && mineSp && mineSp.role === ui.role
+        ? mineSp.effects.filter(function (e) { return e.champion === t.c.id; })[0] : null;
       var title = isPick ? (t.info.played ? plural(t.info.games, "partie") : "jamais joué") : (t.hint.text ? "Joué par " + t.hint.text : "");
       return h("button", {
         type: "button", role: "option", title: title || null,
@@ -419,7 +428,9 @@
                 h("span", { class: mine.bonus > 0 ? "up" : (mine.bonus < 0 ? "down" : ""), text: mine.matchup + " %" }),
                 h("small", { class: "muted", text: mine.matchup_games ? plural(mine.matchup_games, "partie") : "jamais vu" }),
               ]),
-              h("td", { class: "num", text: String(theirs.score) }),
+              h("td", { class: "num" }, [String(theirs.score), theirs.special ? h("small", {
+                class: theirs.special > 0 ? "up" : "down", title: "Particularité de la partie",
+                text: (theirs.special > 0 ? "+" : "") + theirs.special + " forme" }) : null]),
               h("td", {}, [h("b", { text: theirs.champion_name }), h("small", { class: "muted", text: theirs.player })]),
             ]);
           }).concat([h("tr", { class: "coherence" }, [

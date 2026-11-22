@@ -316,7 +316,7 @@ def new_draft(series: TournamentSeries) -> dict:
 
 
 # --------------------------------------------------------- La particularité
-#: La particularité d'une partie : un joueur du site « en vedette », dont
+#: La particularité d'une partie : dans chaque camp, un joueur « en vedette », dont
 #: les champions préférés suivent leur forme à l'époque du tournoi. Le bilan
 #: de chaque champion cette année-là (toutes les parties importées), lissé
 #: vers 50 % comme SPECIAL_PRIOR parties nulles, donne des points :
@@ -339,39 +339,54 @@ def era_rate(champion: str, year: int) -> dict:
     return {**found, "rate": rate}
 
 
+def _effects(champions: list[tuple[int, str]], year: int) -> list[dict]:
+    effects = []
+    for champion_id, name in champions[:SPECIAL_FAVORITES]:
+        form = era_rate(name, year)
+        points = round(max(-SPECIAL_CAP, min(SPECIAL_CAP, (form["rate"] - 0.5) * SPECIAL_WEIGHT)), 1)
+        effects.append({"champion": champion_id, "name": name, "rate": round(form["rate"] * 100),
+                        "games": form["games"], "points": points})
+    return effects
+
+
 def special_rule(series: TournamentSeries, rng=None) -> dict | None:
-    """Tire la particularité d'une partie (None avant le choix des joueurs)."""
+    """Tire la particularité d'une partie (None avant le choix des joueurs) :
+    dans chaque équipe, un joueur en vedette dont les champions préférés
+    suivent leur forme de l'année du tournoi. Elle compte pour les deux
+    camps : {"year", "user": {...}, "opponent": {...}}, chaque côté avec
+    {"role", "player", "effects": [{champion, name, rate, games, points}]}."""
     if not series.lineup:
         return None
     rng = rng or random
+    year = series.run.tournament.split.year
+    names = {cid: name for name, cid in champion_ids_by_name().items()}
+    out = {"year": year}
+
     role = rng.choice(ROLES)
     card = Card.objects.select_related("player").get(pk=int(series.lineup[role]))
-    year = series.run.tournament.split.year
-    favorites = (
-        CardChampion.objects.filter(card__player=card.player_id).select_related("champion")
-        .order_by("-games", "-history_games")
-    )
-    seen, effects = set(), []
-    for a in favorites:
-        if a.champion_id in seen:
-            continue
-        seen.add(a.champion_id)
-        form = era_rate(a.champion.name, year)
-        points = round(max(-SPECIAL_CAP, min(SPECIAL_CAP, (form["rate"] - 0.5) * SPECIAL_WEIGHT)), 1)
-        effects.append({"champion": a.champion_id, "name": a.champion.name, "rate": round(form["rate"] * 100),
-                        "games": form["games"], "points": points})
-        if len(effects) >= SPECIAL_FAVORITES:
-            break
-    if not effects:
-        return None
-    return {"role": role, "player": card.player.ign, "year": year, "effects": effects}
+    favorites, seen = [], set()
+    for a in CardChampion.objects.filter(card__player=card.player_id).order_by("-games", "-history_games"):
+        if a.champion_id not in seen and a.champion_id in names:
+            seen.add(a.champion_id)
+            favorites.append((a.champion_id, names[a.champion_id]))
+    if favorites:
+        out["user"] = {"role": role, "player": card.player.ign, "effects": _effects(favorites, year)}
+
+    role = rng.choice(ROLES)
+    card = Card.objects.select_related("player").get(pk=int(series.opponent[role]))
+    pool = sorted(prepare(series).get("pools", {}).get(role, []), key=lambda p: -p[1])
+    favorites = [(cid, names[cid]) for cid, _ in pool if cid in names]
+    if favorites:
+        out["opponent"] = {"role": role, "player": card.player.ign, "effects": _effects(favorites, year)}
+    return out if ("user" in out or "opponent" in out) else None
 
 
-def special_points(draft_or_game: dict, role: str, champion_id: int) -> float:
-    special = (draft_or_game or {}).get("special")
-    if not special or special["role"] != role:
+def special_points(special: dict | None, team: str, role: str, champion_id: int) -> float:
+    """Les points de la particularité pour ce champion, à ce poste, dans ce camp."""
+    side = (special or {}).get(team)
+    if not side or side["role"] != role:
         return 0.0
-    return next((e["points"] for e in special["effects"] if int(e["champion"]) == int(champion_id)), 0.0)
+    return next((e["points"] for e in side["effects"] if int(e["champion"]) == int(champion_id)), 0.0)
 
 
 def _team_of(draft: dict, color: str) -> str:
@@ -656,11 +671,12 @@ def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent
     for role in ROLES:
         face = matchup(role, user[role]["champion_name"], them[role]["champion_name"])
         points = matchup_points(face["rate"])
-        extra = special_points({"special": special}, role, user[role]["champion"])
+        mine = special_points(special, "user", role, user[role]["champion"])
+        theirs = special_points(special, "opponent", role, them[role]["champion"])
         user[role].update(matchup=round(face["rate"] * 100), matchup_games=face["games"], bonus=points,
-                          special=extra, score=round(user[role]["base"] + points + extra, 1))
+                          special=mine, score=round(user[role]["base"] + points + mine, 1))
         them[role].update(matchup=100 - round(face["rate"] * 100), matchup_games=face["games"], bonus=-points,
-                          score=round(them[role]["base"] - points, 1))
+                          special=theirs, score=round(them[role]["base"] - points + theirs, 1))
 
     def total(side):
         names = [side[r]["champion_name"] for r in ROLES]
