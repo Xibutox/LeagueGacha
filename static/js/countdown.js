@@ -8,9 +8,11 @@
 
   function format(ms) {
     var s = Math.max(0, Math.round(ms / 1000));
-    var h = Math.floor(s / 3600);
+    var d = Math.floor(s / 86400);
+    var h = Math.floor((s % 86400) / 3600);
     var m = Math.floor((s % 3600) / 60);
     var sec = s % 60;
+    if (d) return d + " j " + h + " h";
     if (h) return h + " h " + String(m).padStart(2, "0");
     if (m) return m + " min " + String(sec).padStart(2, "0");
     return sec + " s";

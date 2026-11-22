@@ -4,50 +4,14 @@
 <div class="page-head">
   <div>
     <h1>Mes équipes</h1>
-    <p>5 joueurs, 5 champions chacun : 5 compositions. Ta meilleure équipe complète compte au classement.</p>
+    <p>5 joueurs, 5 champions chacun : 5 compositions. Ta meilleure équipe permanente complète compte au classement général.</p>
   </div>
   <a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Nouvelle équipe</a>
 </div>
+{% include "cards/_team_tabs.html" %}
 
 {% for item in items %}
-  <article class="roster-card">
-    <header>
-      <h2>{{ item.roster.name }}</h2>
-      <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap">
-        {% if item.roster.score is not None %}<span class="score-badge">{{ item.roster.score|floatformat:1 }} <small>points</small></span>
-        {% else %}<span class="score-badge pending">À compléter</span>{% endif %}
-        <a class="btn btn-small" href="{% url 'cards:roster_edit' item.roster.pk %}">Modifier</a>
-        <form method="post" action="{% url 'cards:roster_delete' item.roster.pk %}" class="inline"
-              onsubmit="return confirm('Supprimer « {{ item.roster.name|escapejs }} » ?')">{% csrf_token %}
-          <button class="btn btn-small btn-danger" type="submit">Supprimer</button>
-        </form>
-      </div>
-    </header>
-    <div class="lineup">
-      {% for role, slot, rarity in item.slots %}
-        <div class="lineup-slot">
-          <span class="lineup-role">{{ role }}{% if slot.score is not None %}<b>{{ slot.score|floatformat:1 }}</b>{% endif %}</span>
-          {% if slot %}
-            <a href="{% url 'cards:card_detail' slot.card.pk %}">{% include "cards/_card.html" with card=slot.card rarity=rarity %}</a>
-            <div class="lineup-champs">
-              {% for champion in slot.champion_list %}
-                {% if champion %}<img src="{{ champion.icon_url }}" alt="{{ champion.name }}" title="Compo {{ forloop.counter }} : {{ champion.name }}" loading="lazy">{% else %}<span title="Compo {{ forloop.counter }} : à choisir"></span>{% endif %}
-              {% endfor %}
-            </div>
-          {% else %}
-            <div class="empty-slot">Poste libre</div>
-          {% endif %}
-        </div>
-      {% endfor %}
-    </div>
-    {% if item.roster.compositions %}
-    <div class="comp-strip">
-      {% for comp in item.roster.compositions %}
-        <div><span>Compo {{ comp.index }}</span><b>{% if comp.score is not None %}{{ comp.score|floatformat:1 }}{% else %}—{% endif %}</b></div>
-      {% endfor %}
-    </div>
-    {% endif %}
-  </article>
+  {% include "cards/_roster_card.html" %}
 {% empty %}
   <div class="panel">
     <h2>Pas encore d'équipe</h2>

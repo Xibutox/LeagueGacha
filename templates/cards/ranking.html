@@ -3,16 +3,21 @@
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Classement</h1>
-    <p>Chaque joueur est classé sur sa meilleure équipe complète : la moyenne de ses 5 compositions.</p>
+    <h1>Classement{% if week %} de la semaine{% endif %}</h1>
+    {% if week %}<p>Les équipes de la semaine du {{ week|date:"j F" }}, avec les bonus de sa méta. Nouvelle semaine dans <time data-countdown data-reload datetime="{{ ends_at|date:'c' }}"></time>.</p>
+    {% else %}<p>Chaque joueur est classé sur sa meilleure équipe permanente complète : la moyenne de ses 5 compositions.</p>{% endif %}
   </div>
-  {% if user.is_authenticated %}<a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Monter une équipe</a>{% endif %}
+  {% if user.is_authenticated %}{% if week %}<a class="btn btn-gold" href="{% url 'cards:weekly' %}">Mon équipe de la semaine</a>{% else %}<a class="btn btn-gold" href="{% url 'cards:roster_new' %}">Monter une équipe</a>{% endif %}{% endif %}
 </div>
+<nav class="subtabs" aria-label="Classements">
+  <a href="{% url 'cards:ranking' %}"{% if not week %} class="is-active" aria-current="page"{% endif %}>Général</a>
+  <a href="{% url 'cards:ranking' %}?semaine=1"{% if week %} class="is-active" aria-current="page"{% endif %}>Semaine</a>
+</nav>
 
 {% if user.is_authenticated %}
   <p class="my-rank">
     {% if mine %}Tu es <b>{{ mine.0 }}{% if mine.0 == 1 %}er{% else %}e{% endif %}</b> avec « {{ mine.1.name }} », {{ mine.1.score|floatformat:1 }} points.
-    {% else %}Tu n'es pas encore classé : <a href="{% url 'cards:rosters' %}">complète une équipe</a>.{% endif %}
+    {% else %}Tu n'es pas encore classé : <a href="{% if week %}{% url 'cards:weekly' %}{% else %}{% url 'cards:rosters' %}{% endif %}">complète une équipe</a>.{% endif %}
   </p>
 {% endif %}
 

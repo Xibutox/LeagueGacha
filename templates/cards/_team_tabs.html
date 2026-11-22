@@ -1,0 +1,12 @@
+<nav class="subtabs" aria-label="Équipes">
+  <a href="{% url 'cards:rosters' %}"{% if tab == 'permanent' %} class="is-active" aria-current="page"{% endif %}>Équipes permanentes</a>
+  <a href="{% url 'cards:weekly' %}"{% if tab == 'weekly' %} class="is-active" aria-current="page"{% endif %}>Équipe de la semaine</a>
+</nav>
+<form class="supporter" method="post" action="{% url 'cards:supporter' %}">{% csrf_token %}
+  <input type="hidden" name="next" value="{{ request.path }}">
+  <label for="supporter-team">Équipe de cœur</label>
+  <input id="supporter-team" name="team" list="supporter-teams" value="{{ supporter.name|default:'' }}" placeholder="Ex. Gen.G" autocomplete="off">
+  <datalist id="supporter-teams">{% for name in supporter_teams %}<option value="{{ name }}">{% endfor %}</datalist>
+  <button class="btn btn-small" type="submit">{% if supporter %}Changer{% else %}Choisir{% endif %}</button>
+  <p class="muted small">+1 % au score de tes équipes (permanentes et de la semaine, pas en tournoi) par joueur de cette équipe aligné, toutes années confondues.{% if supporter %} Vide le champ pour la retirer.{% endif %}</p>
+</form>

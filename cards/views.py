@@ -6,6 +6,7 @@ from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
 from django.core.paginator import Paginator
+from django.db import IntegrityError
 from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,8 +17,10 @@ from django.views.decorators.http import require_POST
 from esport.models import Champion, Split
 from esport.scoring import COHERENCE_WEIGHT, DIMENSIONS, SLOT_PLAYER_WEIGHT, UNPLAYED_PENALTY
 
+from esport.models import Team
+
 from .models import COMPOSITIONS, ROLES, Booster, Card, CardChampion, PackOpening, Rarity, Roster, UserCard
-from . import catalog
+from . import catalog, weekly
 from .services import (
     booster_showcase,
     choose_exchange,
@@ -37,6 +40,8 @@ from .services import (
     open_booster,
     roster_picks,
     save_roster,
+    set_supporter_team,
+    supporter_team,
     unseen_gifts,
 )
 
@@ -101,7 +106,7 @@ def home(request):
         context["total_count"] = _playable_cards().count()
         context["recent_openings"] = PackOpening.objects.filter(user=request.user).select_related("booster")[:5]
         context["gifts"] = unseen_gifts(request.user)
-        best = Roster.objects.filter(user=request.user, score__isnull=False).order_by("-score").first()
+        best = Roster.objects.filter(user=request.user, week__isnull=True, score__isnull=False).order_by("-score").first()
         context["best_roster"] = best
     return render(request, "cards/home.html", context)
 
@@ -336,14 +341,9 @@ def choose_exchange_view(request, pk):
 
 
 # --------------------------------------------------------------------- Équipes
-@login_required
-def roster_list(request):
-    rosters = Roster.objects.filter(user=request.user).prefetch_related(
-        "slots__card__player", "slots__card__split", "slots__card__team", "slots__card__image",
-        "slots__card__stats", "slots__picks__champion",
-    ).order_by("-score", "-updated_at")
-    owned = list(Card.objects.filter(owners__user=request.user).values_list("pk", flat=True).distinct())
-    rarities = best_rarities(request.user, owned)
+def _roster_items(user, rosters) -> list[dict]:
+    owned = list(Card.objects.filter(owners__user=user).values_list("pk", flat=True).distinct())
+    rarities = best_rarities(user, owned)
     items = []
     for roster in rosters:
         slots = roster.slot_map()
@@ -352,19 +352,107 @@ def roster_list(request):
             "slots": [(role, slots.get(role), rarities.get(slots[role].card_id) if role in slots else None)
                       for role in ROLES],
         })
-    return render(request, "cards/rosters.html", {"items": items})
+    return items
 
 
-def _builder_data(user, roster):
+_ROSTER_PREFETCH = (
+    "slots__card__player", "slots__card__split", "slots__card__team", "slots__card__image",
+    "slots__card__stats", "slots__picks__champion",
+)
+
+
+def _supporter_context(user) -> dict:
+    team = supporter_team(user)
+    # Les équipes qui ont des cartes, pour la liste de choix.
+    teams = (
+        Team.objects.filter(pk__in=Card.objects.filter(is_active=True).values("team"))
+        .order_by("name").values_list("name", flat=True)
+    )
+    return {"supporter": team, "supporter_teams": list(teams)}
+
+
+@login_required
+def roster_list(request):
+    rosters = Roster.objects.filter(user=request.user, week__isnull=True).prefetch_related(
+        *_ROSTER_PREFETCH).order_by("-score", "-updated_at")
+    context = {"items": _roster_items(request.user, rosters), "tab": "permanent"}
+    context.update(_supporter_context(request.user))
+    return render(request, "cards/rosters.html", context)
+
+
+@login_required
+@require_POST
+def supporter_set(request):
+    """Choisit l'équipe de cœur (par son nom) ; vide : la retire."""
+    name = (request.POST.get("team") or "").strip()
+    if not name:
+        set_supporter_team(request.user, None)
+        messages.success(request, "Plus d'équipe de cœur.")
+        return redirect(request.POST.get("next") or "cards:rosters")
+    team = Team.objects.filter(name__iexact=name).first() or Team.objects.filter(short_name__iexact=name).first()
+    if team is None:
+        messages.error(request, f"Aucune équipe « {name} ». Choisis-la dans la liste proposée.")
+    else:
+        set_supporter_team(request.user, team)
+        messages.success(request, f"{team.name} est ton équipe de cœur : +1 % par joueur de {team.name} aligné.")
+    next_url = request.POST.get("next") or ""
+    return redirect(next_url if next_url.startswith("/") else "cards:rosters")
+
+
+def _rule_list(rules: dict) -> list[dict]:
+    return [{"role": role, **rules[role]} for role in ROLES if role in rules]
+
+
+@login_required
+def weekly_page(request):
+    """L'équipe de la semaine : la méta, et l'équipe (reprise de la
+    meilleure équipe permanente si le joueur n'y a pas encore touché)."""
+    week = weekly.week_start()
+    meta = weekly.meta_for(week)
+    roster = weekly.weekly_roster(request.user, week)
+    items = []
+    if roster is not None:
+        roster = Roster.objects.prefetch_related(*_ROSTER_PREFETCH).get(pk=roster.pk)
+        items = _roster_items(request.user, [roster])
+    context = {
+        "tab": "weekly",
+        "week": week,
+        "ends_at": weekly.week_end(week),
+        "rules": _rule_list(meta.rules),
+        "roster": roster,
+        "items": items,
+        "has_permanent": Roster.objects.filter(user=request.user, week__isnull=True, score__isnull=False).exists(),
+    }
+    context.update(_supporter_context(request.user))
+    return render(request, "cards/weekly.html", context)
+
+
+@login_required
+@require_POST
+def weekly_reset(request):
+    """Reprend la meilleure équipe permanente dans l'équipe de la semaine."""
+    week = weekly.week_start()
+    roster = Roster.objects.filter(user=request.user, week=week).first()
+    result = weekly.copy_best_roster(request.user, week, roster)
+    if result is None:
+        messages.error(request, "Il te faut d'abord une équipe permanente complète.")
+    else:
+        messages.success(request, "Ton équipe de la semaine reprend ta meilleure équipe permanente.")
+    return redirect("cards:weekly")
+
+
+def _builder_data(user, roster, week=None):
     owned_ids = list(Card.objects.filter(owners__user=user, owners__quantity__gt=0).values_list("pk", flat=True).distinct())
     rarities = best_rarities(user, owned_ids)
     cards = (
         Card.objects.filter(pk__in=owned_ids)
-        .select_related("player", "split", "team", "image", "stats")
+        .select_related("player", "split__league", "team", "image", "stats")
         .prefetch_related(Prefetch("champions", queryset=CardChampion.objects.only(
             "card_id", "champion_id", "rating", "games", "wins", "history_games")))
         .order_by("-overall", "player__ign")
     )
+    rules = weekly.meta_for(week).rules if week else {}
+    fan = supporter_team(user)
     by_role = {role: [] for role in ROLES}
     affinities = {}
     for card in cards:
@@ -380,6 +468,8 @@ def _builder_data(user, roster):
             "rating": round(card.stats.score, 1) if card.stats else 50,
             "photo": card.image_url,
             "rarity": {"name": rarity.name, "color": rarity.color, "bonus": float(rarity.score_bonus)},
+            "meta": weekly.card_bonus(rules.get(card.role), card),
+            "fan": bool(fan and card.team_id == fan.pk),
         })
         affinities[card.pk] = {
             a.champion_id: {"rating": a.rating, "games": a.games, "wins": a.wins, "before": a.history_games}
@@ -399,34 +489,52 @@ def _builder_data(user, roster):
         "penalty": UNPLAYED_PENALTY,
         "playerWeight": SLOT_PLAYER_WEIGHT,
         "coherenceWeight": COHERENCE_WEIGHT,
-        "name": roster.name if roster else "",
+        "name": roster.name if roster else (weekly.WEEKLY_NAME if week else ""),
         "picks": roster_picks(roster) if roster else {},
         "previewUrl": reverse("cards:roster_preview"),
+        "week": week.isoformat() if week else None,
+        "rules": rules,
+        "metaChampions": weekly.champion_bonuses(rules) if rules else {},
+        "supporter": fan.name if fan else None,
     }
 
 
 @login_required
 def roster_edit(request, pk=None):
     roster = get_object_or_404(Roster, pk=pk, user=request.user) if pk else None
+    current_week = weekly.week_start()
+    if roster is not None:
+        week = roster.week
+        if week is not None and week != current_week:
+            messages.error(request, "Cette semaine est terminée : son équipe ne se modifie plus.")
+            return redirect("cards:weekly")
+    else:
+        week = current_week if request.GET.get("semaine") or request.POST.get("semaine") else None
+        if week is not None:
+            roster = Roster.objects.filter(user=request.user, week=week).first()
+    back = "cards:weekly" if week else "cards:rosters"
     if request.method == "POST":
         try:
             picks = json.loads(request.POST.get("picks") or "{}")
         except ValueError:
             picks = {}
         try:
-            roster = save_roster(request.user, request.POST.get("name", ""), picks, roster)
-        except GameError as exc:
-            messages.error(request, str(exc))
-            data = _builder_data(request.user, roster)
+            roster = save_roster(request.user, request.POST.get("name", ""), picks, roster, week=week)
+        except (GameError, IntegrityError) as exc:
+            messages.error(request, str(exc) if isinstance(exc, GameError) else "Tu as déjà une équipe cette semaine.")
+            data = _builder_data(request.user, roster, week)
             data["name"] = request.POST.get("name", "")
             data["picks"] = picks
-            return render(request, "cards/roster_edit.html", {"roster": roster, "data": data})
+            return render(request, "cards/roster_edit.html", {"roster": roster, "data": data, "week": week})
         if roster.score is not None:
             messages.success(request, f"« {roster.name} » enregistrée : {roster.score:.1f} points.")
         else:
             messages.success(request, f"« {roster.name} » enregistrée. Complète les 5 compositions pour être classé.")
-        return redirect("cards:rosters")
-    return render(request, "cards/roster_edit.html", {"roster": roster, "data": _builder_data(request.user, roster)})
+        return redirect(back)
+    return render(request, "cards/roster_edit.html", {
+        "roster": roster, "data": _builder_data(request.user, roster, week), "week": week,
+        "rules": _rule_list(weekly.meta_for(week).rules) if week else [],
+    })
 
 
 @login_required
@@ -434,16 +542,18 @@ def roster_edit(request, pk=None):
 def roster_preview(request):
     """Le score d'une équipe en cours de composition, sans l'enregistrer."""
     try:
-        picks = json.loads(request.body or b"{}").get("picks", {})
-    except ValueError:
+        body = json.loads(request.body or b"{}")
+        picks = body.get("picks", {})
+    except (ValueError, AttributeError):
         return JsonResponse({"error": "Requête invalide."}, status=400)
-    return JsonResponse(evaluate_roster(request.user, picks))
+    week = weekly.week_start() if body.get("week") else None
+    return JsonResponse(evaluate_roster(request.user, picks, week=week))
 
 
 @login_required
 @require_POST
 def roster_delete(request, pk):
-    roster = get_object_or_404(Roster, pk=pk, user=request.user)
+    roster = get_object_or_404(Roster, pk=pk, user=request.user, week__isnull=True)
     roster.delete()
     messages.success(request, f"« {roster.name} » supprimée.")
     return redirect("cards:rosters")
@@ -466,8 +576,13 @@ def _lineup_cards(roster, best: dict) -> list[dict]:
 
 
 def ranking(request):
-    """Le classement général : la meilleure équipe complète de chaque joueur."""
-    rows = leaderboard()
+    """Le classement général (meilleure équipe permanente complète de
+    chaque joueur) ou celui de la semaine (?semaine=1)."""
+    week = None
+    if request.GET.get("semaine"):
+        week = weekly.week_start()
+        weekly.ensure_weekly_rosters(week)
+    rows = leaderboard(week=week)
     # La meilleure rareté de chaque carte alignée, en une requête.
     best = {}
     owned = UserCard.objects.filter(
@@ -483,5 +598,6 @@ def ranking(request):
     mine = None
     if request.user.is_authenticated:
         mine = next(((rank, r) for rank, r in rows if r.user_id == request.user.pk), None)
-    return render(request, "cards/ranking.html", {"rows": rows, "mine": mine,
+    return render(request, "cards/ranking.html", {"rows": rows, "mine": mine, "week": week,
+                                                  "ends_at": weekly.week_end(week) if week else None,
                                                   "podium": rows[:3], "rest": rows[3:]})

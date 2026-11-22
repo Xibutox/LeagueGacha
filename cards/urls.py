@@ -29,4 +29,7 @@ urlpatterns = [
     path("equipes/apercu/", views.roster_preview, name="roster_preview"),
     path("equipes/<int:pk>/", views.roster_edit, name="roster_edit"),
     path("equipes/<int:pk>/supprimer/", views.roster_delete, name="roster_delete"),
+    path("equipes/semaine/", views.weekly_page, name="weekly"),
+    path("equipes/semaine/reprendre/", views.weekly_reset, name="weekly_reset"),
+    path("equipes/coeur/", views.supporter_set, name="supporter"),
 ]

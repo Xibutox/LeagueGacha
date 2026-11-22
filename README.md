@@ -169,6 +169,20 @@ de carte vaut à peu près celle de DPM.lol + 15.
    cinq très bonnes avant : la note reste bonne. Un champion jamais joué en
    compétition vaut sa note moins 10 (`UNPLAYED_PENALTY`).
 
+## Équipe de la semaine et équipe de cœur
+
+- **Équipe de la semaine** (`cards/weekly.py`) : chaque lundi à 00:00 (Paris),
+  une nouvelle méta tire un bonus par poste, 5 types différents parmi 8 :
+  région, époque (3 saisons), équipe (toutes années), compétition
+  internationale, nationalité, outsider (carte ≤ 74), champions peu joués
+  (jusqu'à +25 %, moins le champion est joué en compétition plus c'est
+  fort) et classe de champion. Le bonus s'ajoute à celui de rareté.
+  L'équipe de la semaine reprend d'office la meilleure équipe permanente ;
+  elle a son propre classement (Classement › Semaine).
+- **Équipe de cœur** : chaque joueur du site en choisit une (sans notion
+  d'année) ; +1 % au score de ses équipes, permanentes et de la semaine,
+  par joueur de cette équipe aligné. Pas en tournoi.
+
 ## Raretés, fusions, échanges
 
 Chaque joueur existe à toutes les raretés : la rareté est celle de

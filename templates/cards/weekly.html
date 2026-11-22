@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Équipe de la semaine — LeagueGacha{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Équipe de la semaine</h1>
+    <p>Chaque lundi à minuit, la méta change : un bonus par poste, à condition d'aligner le bon joueur ou les bons champions. Ton équipe repart de ta meilleure équipe permanente ; adapte-la pour grimper au classement de la semaine.</p>
+  </div>
+  <a class="btn" href="{% url 'cards:ranking' %}?semaine=1">Classement de la semaine</a>
+</div>
+{% include "cards/_team_tabs.html" %}
+
+<section class="meta">
+  <div class="strap"><h2>Méta du {{ week|date:"j F" }}</h2><p>Nouvelle méta dans <time data-countdown data-reload datetime="{{ ends_at|date:'c' }}"></time></p></div>
+  <ol class="meta-rules">
+    {% for rule in rules %}
+      <li class="meta-rule">
+        <span class="meta-role">{{ rule.role }}</span>
+        <b class="meta-bonus">{% if rule.kind == "offmeta" %}jusqu'à {% endif %}+{{ rule.bonus }} %</b>
+        <p>{{ rule.label }}</p>
+        <small class="muted">{% if rule.on_card %}sur les 5 champions du poste{% else %}champion par champion{% endif %}</small>
+      </li>
+    {% endfor %}
+  </ol>
+  <p class="muted small">Le bonus de la méta s'ajoute au bonus de rareté de l'exemplaire, comme lui sur le score du poste.</p>
+</section>
+
+{% if roster %}
+  {% for item in items %}{% include "cards/_roster_card.html" %}{% endfor %}
+  {% if has_permanent %}
+  <form method="post" action="{% url 'cards:weekly_reset' %}" class="inline"
+        onsubmit="return confirm('Remplacer ton équipe de la semaine par ta meilleure équipe permanente ?')">{% csrf_token %}
+    <button class="btn btn-small btn-ghost" type="submit">Reprendre ma meilleure équipe permanente</button>
+  </form>
+  {% endif %}
+{% else %}
+  <div class="panel">
+    <h2>Pas encore d'équipe cette semaine</h2>
+    <p class="muted">Monte-la directement, ou complète d'abord une équipe permanente : elle sera reprise automatiquement chaque lundi.</p>
+    <a class="btn btn-gold" href="{% url 'cards:roster_new' %}?semaine=1">Monter mon équipe de la semaine</a>
+  </div>
+{% endif %}
+{% endblock %}

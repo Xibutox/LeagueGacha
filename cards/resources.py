@@ -27,6 +27,8 @@ from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     ExchangeOffer,
     QuizAttempt,
+    Supporter,
+    WeeklyMeta,
     Tournament,
     TournamentSeries,
     Portal,
@@ -556,12 +558,13 @@ class RosterResource(ModelResource):
     order = 2
     description = _("Les équipes de 5 montées par les joueurs du site.")
 
-    list_display = ("name", "user", "score", "slot_count", "overall_display", "updated_at")
+    list_display = ("name", "user", "week", "score", "slot_count", "overall_display", "updated_at")
+    list_filter = ("week",)
     search_fields = ("name", "user__username")
     ordering = ("-score", "-updated_at")
     list_select_related = ("user",)
-    fields = (("name", "user"), "score")
-    readonly_fields = ("score",)
+    fields = (("name", "user"), ("week", "score"))
+    readonly_fields = ("score", "week")
     inlines = (RosterSlotInline,)
     related_tables = (RelatedTable("slots", icon="person"),)
 
@@ -803,3 +806,42 @@ class QuizAttemptResource(ModelResource):
 
     def has_add_permission(self, request):
         return False
+
+
+@register(WeeklyMeta)
+class WeeklyMetaResource(ModelResource):
+    icon = "event_repeat"
+    group = GAME
+    order = 20
+    label_plural = _("métas de la semaine")
+    description = _(
+        "La méta de chaque semaine (équipes de la semaine) : un bonus par poste, tiré au sort le lundi. "
+        "Supprimer celle de la semaine en cours la fait retirer au prochain affichage."
+    )
+    history = False
+
+    list_display = ("week", "rules_display")
+    ordering = ("-week",)
+    readonly_fields = ("week", "rules")
+
+    def has_add_permission(self, request):
+        return False
+
+    @display(description=_("Bonus"))
+    def rules_display(self, meta):
+        return " · ".join(f"{role} : {r.get('label')} (+{r.get('bonus')} %)" for role, r in (meta.rules or {}).items())
+
+
+@register(Supporter)
+class SupporterResource(ModelResource):
+    icon = "favorite"
+    group = PLAYERS
+    order = 8
+    label_plural = _("équipes de cœur")
+    description = _("L'équipe de cœur de chaque joueur du site : +1 % par joueur de cette équipe aligné.")
+    history = False
+
+    list_display = ("user", "team", "updated_at")
+    list_select_related = ("user", "team")
+    search_fields = ("user__username", "team__name")
+    ordering = ("user__username",)

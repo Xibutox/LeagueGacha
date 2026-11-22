@@ -4,6 +4,7 @@
 {% block content %}
 <form method="post" id="builder" class="builder" novalidate>{% csrf_token %}
   <input type="hidden" name="picks" id="picks-input">
+  {% if week %}<input type="hidden" name="semaine" value="1">{% endif %}
   <div class="builder-head">
     <div class="builder-name">
       <label for="team-name">Nom de l'équipe</label>
@@ -20,7 +21,15 @@
     La composition 1 réunit le premier champion de chaque joueur, et ainsi de suite.
     Poste = moitié note du joueur, moitié note sur le champion, plus le bonus de rareté.
     Composition = la moyenne de ses postes à 75 %, sa cohérence à 25 %.
+    {% if data.supporter %}Équipe de cœur ({{ data.supporter }}) : +1 % au total par joueur aligné (♥).{% endif %}
   </p>
+  {% if week %}
+  <ol class="meta-rules is-compact" aria-label="Méta de la semaine">
+    {% for rule in rules %}
+      <li class="meta-rule"><span class="meta-role">{{ rule.role }}</span><b class="meta-bonus">{% if rule.kind == "offmeta" %}jusqu'à {% endif %}+{{ rule.bonus }} %</b><p>{{ rule.label }}</p></li>
+    {% endfor %}
+  </ol>
+  {% endif %}
 
   <div class="lanes" id="lanes"></div>
 
@@ -31,7 +40,7 @@
 
   <div class="builder-actions">
     <ul class="builder-errors" id="errors"></ul>
-    <a class="btn btn-ghost" href="{% url 'cards:rosters' %}">Annuler</a>
+    <a class="btn btn-ghost" href="{% if week %}{% url 'cards:weekly' %}{% else %}{% url 'cards:rosters' %}{% endif %}">Annuler</a>
     <button class="btn btn-gold btn-big" type="submit">Enregistrer l'équipe</button>
   </div>
 </form>
@@ -48,4 +57,4 @@
 </dialog>
 {{ data|json_script:"builder-data" }}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/roster.js' %}?v=21"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/roster.js' %}?v=22"></script>{% endblock %}

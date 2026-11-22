@@ -213,6 +213,37 @@ table.kv td { padding: 7px 0; }
   clip-path: polygon(10px 0, 100% 0, calc(100% - 10px) 100%, 0 100%); }
 .score-badge small { font-size: .8rem; font-weight: 600; }
 .score-badge.pending { background: var(--steel); color: var(--muted); font-size: 1rem; padding: 7px 18px; }
+.fan-badge { color: #ff8fa3; font: 700 1.05rem/1 var(--display); }
+
+/* Sous-onglets (équipes, classements) */
+.subtabs { display: flex; gap: 0; margin: 0 0 18px; border-bottom: 1px solid var(--steel); }
+.subtabs a { padding: 10px 18px; color: var(--muted); font: 600 1.05rem/1 var(--display); letter-spacing: .02em;
+  border-bottom: 3px solid transparent; margin-bottom: -1px; }
+.subtabs a:hover { color: var(--text); text-decoration: none; }
+.subtabs a.is-active { color: var(--text); border-bottom-color: var(--hextech); }
+
+/* Équipe de cœur */
+.supporter { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin: 0 0 22px; }
+.supporter label { font: 700 1.05rem/1 var(--display); color: #ff8fa3; }
+.supporter input { min-width: 220px; padding: 7px 10px; background: var(--abyss); color: var(--text);
+  border: 1px solid var(--steel); font: inherit; }
+.supporter p { flex-basis: 100%; margin: 0; }
+
+/* Méta de la semaine */
+.meta { margin-bottom: 26px; }
+.meta-rules { list-style: none; padding: 0; margin: 14px 0 8px; display: grid; gap: 10px;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+.meta-rule { background: var(--rift); border: 1px solid var(--steel); border-top: 3px solid var(--gold); padding: 12px 14px;
+  display: flex; flex-direction: column; gap: 4px; }
+.meta-rule p { margin: 0; font-size: .95rem; line-height: 1.3; }
+.meta-role { font: 700 .95rem/1 var(--display); color: var(--muted); }
+.meta-bonus { font: 800 1.5rem/1 var(--display); color: var(--gold); }
+.meta-rules.is-compact { margin: 0 0 18px; }
+.meta-rules.is-compact .meta-rule { padding: 8px 10px; }
+.meta-rules.is-compact .meta-bonus { font-size: 1.15rem; }
+.meta-tag { display: inline-block; padding: 1px 6px; background: rgba(226, 179, 90, .16); color: var(--gold);
+  font: 700 .8rem/1.3 var(--display); white-space: nowrap; }
+.pick-champ .meta-tag { position: absolute; left: 4px; top: 4px; }
 .lineup { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 14px; padding: 18px; }
 @media (max-width: 900px) { .lineup { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 .lineup-slot { display: flex; flex-direction: column; gap: 8px; }

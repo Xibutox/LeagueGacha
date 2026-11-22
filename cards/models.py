@@ -471,6 +471,13 @@ class Roster(models.Model):
         settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="rosters"
     )
     name = models.CharField("nom", max_length=60)
+    week = models.DateField(
+        "semaine",
+        null=True,
+        blank=True,
+        db_index=True,
+        help_text="Vide : une équipe permanente. Sinon l'équipe de la semaine qui commence ce lundi (méta de la semaine).",
+    )
     score = models.FloatField(
         "score",
         null=True,
@@ -488,6 +495,10 @@ class Roster(models.Model):
         verbose_name = "équipe"
         verbose_name_plural = "équipes"
         ordering = ["-updated_at"]
+        constraints = [
+            models.UniqueConstraint(fields=["user", "week"], condition=models.Q(week__isnull=False),
+                                    name="one_weekly_roster_per_user"),
+        ]
 
     def __str__(self):
         return f"{self.name} ({self.user})"
@@ -781,3 +792,43 @@ class QuizAttempt(models.Model):
     def current(self) -> int | None:
         """L'indice de la question en cours, None quand tout est répondu."""
         return next((i for i, q in enumerate(self.questions) if q.get("result") is None), None)
+
+
+# --------------------------------------------------------------------- Méta de la semaine
+class WeeklyMeta(models.Model):
+    """La méta d'une semaine (du lundi 00:00 au lundi suivant) pour les
+    équipes de la semaine : un bonus par poste, chacun d'un type différent
+    tiré au sort (cards/weekly.py).
+
+    rules : {rôle: {kind, value, label, bonus}}."""
+
+    week = models.DateField("semaine (lundi)", unique=True)
+    rules = models.JSONField("bonus par poste", default=dict)
+    created_at = models.DateTimeField("créée le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "méta de la semaine"
+        verbose_name_plural = "métas des semaines"
+        ordering = ["-week"]
+
+    def __str__(self):
+        return f"Semaine du {self.week:%d/%m/%Y}"
+
+
+class Supporter(models.Model):
+    """L'équipe de cœur d'un joueur du site : +1 % au score de ses équipes
+    (permanentes et de la semaine, pas en tournoi) par joueur de cette
+    équipe aligné, toutes années confondues."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="supporter"
+    )
+    team = models.ForeignKey(Team, verbose_name="équipe de cœur", on_delete=models.CASCADE, related_name="supporters")
+    updated_at = models.DateTimeField("choisie le", auto_now=True)
+
+    class Meta:
+        verbose_name = "équipe de cœur"
+        verbose_name_plural = "équipes de cœur"
+
+    def __str__(self):
+        return f"{self.user} ❤ {self.team}"

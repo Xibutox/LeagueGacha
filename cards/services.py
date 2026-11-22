@@ -11,7 +11,7 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.cache import cache
-from django.db import IntegrityError, connection, transaction
+from django.db import IntegrityError, connection, models, transaction
 from django.db.models import F, Sum
 from django.utils import timezone
 from django.utils.text import slugify
@@ -854,7 +854,32 @@ def _duo_pairs(champion_names: set[str]) -> set[frozenset]:
     return {frozenset(p) for p in pairs}
 
 
-def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
+def supporter_team(user):
+    """L'équipe de cœur du joueur (esport.Team) ou None."""
+    from .models import Supporter
+
+    if user is None or not getattr(user, "is_authenticated", False):
+        return None
+    found = Supporter.objects.filter(user=user).select_related("team").first()
+    return found.team if found else None
+
+
+def set_supporter_team(user, team) -> None:
+    """Choisit (ou retire, team=None) l'équipe de cœur, puis recalcule ses équipes."""
+    from .models import Supporter
+
+    if team is None:
+        Supporter.objects.filter(user=user).delete()
+    else:
+        Supporter.objects.update_or_create(user=user, defaults={"team": team})
+    refresh_rosters_of_user(user)
+
+
+#: Bonus d'équipe de cœur : % du score par joueur de cette équipe aligné.
+SUPPORTER_BONUS = 1
+
+
+def evaluate_roster(user, picks: dict, check: bool = False, week=None) -> dict:
     """Le score d'une équipe, poste par poste et composition par composition.
 
     Score d'un poste = (moitié note du joueur sur la période, moitié note
@@ -863,9 +888,19 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
     moyenne de ses 5 postes et sa cohérence. Score de l'équipe = moyenne
     des 5 compositions, quand tout est rempli.
 
+    week : le lundi d'une équipe de la semaine ; les bonus de la méta de
+    cette semaine s'ajoutent au bonus de rareté (cards/weekly.py).
+    L'équipe de cœur du joueur ajoute SUPPORTER_BONUS % au score de
+    l'équipe par joueur de cette équipe aligné.
+
     check=True lève GameError sur un choix interdit (sinon, les erreurs
     sont listées dans "errors")."""
+    from . import weekly
+
     choices = _parse_picks(picks)
+    rules = weekly.meta_for(week).rules if week else {}
+    games = weekly.champion_games() if any(not r.get("on_card") for r in rules.values()) else None
+    fan_team = supporter_team(user)
     errors = []
 
     def fail(message):
@@ -874,7 +909,7 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
         errors.append(message)
 
     card_ids = [c for c, _ in choices.values()]
-    cards = Card.objects.select_related("player", "split", "stats").in_bulk(card_ids)
+    cards = Card.objects.select_related("player", "split__league", "stats", "team").in_bulk(card_ids)
     rarities = best_rarities(user, card_ids)
     champion_ids = {ch for _, chs in choices.values() for ch in chs if ch}
     champions = Champion.objects.in_bulk(champion_ids)
@@ -910,6 +945,8 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
             seen.add(champion_id)
         rarity = rarities[card_id]
         player_rating = card.stats.score if card.stats else 50.0
+        rule = rules.get(role)
+        meta_card = weekly.card_bonus(rule, card)
         entries = []
         for champion_id in chosen:
             champion = champions.get(champion_id) if champion_id else None
@@ -918,6 +955,7 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
                 continue
             affinity = ratings.get((card_id, champion_id))
             rating = affinity.rating if affinity else unplayed_rating(player_rating)
+            meta = meta_card + weekly.champion_bonus(rule, champion, games)
             entries.append({
                 "id": champion.pk,
                 "name": champion.name,
@@ -925,7 +963,8 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
                 "played": affinity is not None,
                 "games": affinity.games if affinity else 0,
                 "history_games": affinity.history_games if affinity else 0,
-                "score": slot_score(player_rating, rating, rarity.score_bonus),
+                "meta_bonus": meta,
+                "score": slot_score(player_rating, rating, float(rarity.score_bonus) + meta),
                 "profile": champion.profile,
             })
         slots[role] = {
@@ -934,6 +973,8 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
             "player_rating": round(player_rating, 1),
             "rarity": {"id": rarity.pk, "name": rarity.name, "color": rarity.color,
                        "bonus": float(rarity.score_bonus)},
+            "meta_bonus": meta_card,
+            "supporter": bool(fan_team and card.team_id == fan_team.pk),
             "champions": entries,
         }
 
@@ -971,28 +1012,37 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
         for e in s["champions"]:
             if e:
                 e.pop("profile", None)
+    fans = sum(1 for s in slots.values() if s["supporter"])
+    base = team_score([c["score"] for c in compositions]) if complete else None
     return {
         "slots": slots,
         "compositions": compositions,
-        "score": team_score([c["score"] for c in compositions]) if complete else None,
+        "base_score": base,
+        "supporter": {"team": fan_team.name, "players": fans, "bonus": fans * SUPPORTER_BONUS} if fan_team else None,
+        "score": round(base * (1 + fans * SUPPORTER_BONUS / 100), 1) if base is not None else None,
         "complete": complete,
         "errors": errors,
+        "week": week.isoformat() if week else None,
+        "rules": rules,
     }
 
 
-def save_roster(user, name: str, picks: dict, roster=None):
-    """Crée ou modifie une équipe (voir evaluate_roster pour picks)."""
+def save_roster(user, name: str, picks: dict, roster=None, week=None):
+    """Crée ou modifie une équipe (voir evaluate_roster pour picks) ; week :
+    le lundi d'une équipe de la semaine (seulement à la création)."""
     from .models import Roster, RosterPick, RosterSlot
 
     name = (name or "").strip()
     if not name:
         raise GameError("Donne un nom à ton équipe.")
-    evaluate_roster(user, picks, check=True)
+    if roster is not None:
+        week = roster.week
+    evaluate_roster(user, picks, check=True, week=week)
     choices = _parse_picks(picks)
 
     with transaction.atomic():
         if roster is None:
-            roster = Roster.objects.create(user=user, name=name[:60])
+            roster = Roster.objects.create(user=user, name=name[:60], week=week)
         else:
             roster.name = name[:60]
             roster.save()
@@ -1020,7 +1070,7 @@ def refresh_roster(roster) -> dict:
     """Recalcule et enregistre le score de l'équipe, de ses postes et de ses choix."""
     from .models import RosterPick
 
-    result = evaluate_roster(roster.user, roster_picks(roster))
+    result = evaluate_roster(roster.user, roster_picks(roster), week=roster.week)
     for slot in roster.slots.prefetch_related("picks"):
         data = result["slots"].get(slot.role)
         scores = []
@@ -1033,7 +1083,8 @@ def refresh_roster(roster) -> dict:
         slot.score = team_score(scores) if scores else None
         slot.save(update_fields=["score"])
     roster.score = result["score"]
-    roster.details = {"compositions": result["compositions"], "complete": result["complete"]}
+    roster.details = {"compositions": result["compositions"], "complete": result["complete"],
+                      "base_score": result["base_score"], "supporter": result["supporter"]}
     roster.save(update_fields=["score", "details"])
     return result
 
@@ -1041,7 +1092,13 @@ def refresh_roster(roster) -> dict:
 def refresh_rosters_of_split(split: Split) -> int:
     from .models import Roster
 
-    rosters = list(Roster.objects.filter(slots__card__split=split).distinct().select_related("user"))
+    from .weekly import week_start
+
+    rosters = list(
+        Roster.objects.filter(slots__card__split=split)
+        .filter(models.Q(week__isnull=True) | models.Q(week__gte=week_start()))
+        .distinct().select_related("user")
+    )
     for roster in rosters:
         refresh_roster(roster)
     return len(rosters)
@@ -1050,19 +1107,22 @@ def refresh_rosters_of_split(split: Split) -> int:
 def refresh_rosters_of_user(user) -> int:
     from .models import Roster
 
-    rosters = list(Roster.objects.filter(user=user))
+    from .weekly import week_start
+
+    rosters = list(Roster.objects.filter(user=user).filter(models.Q(week__isnull=True) | models.Q(week__gte=week_start())))
     for roster in rosters:
         refresh_roster(roster)
     return len(rosters)
 
 
-def leaderboard(limit: int = 100):
-    """Le classement : la meilleure équipe complète de chaque joueur du site."""
+def leaderboard(limit: int = 100, week=None):
+    """Le classement : la meilleure équipe permanente complète de chaque
+    joueur du site ; avec week, les équipes de cette semaine."""
     from .models import Roster
 
     best = {}
     rosters = (
-        Roster.objects.filter(score__isnull=False)
+        Roster.objects.filter(score__isnull=False, week=week)
         .select_related("user")
         .prefetch_related("slots__card__player", "slots__card__image", "slots__card__split",
                           "slots__picks__champion")

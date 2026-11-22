@@ -6,6 +6,8 @@ from datetime import timedelta
 import pytest
 
 from cards.models import (
+    Supporter,
+    WeeklyMeta,
     Booster,
     BoosterGift,
     BoosterRarityWeight,
@@ -83,6 +85,8 @@ class TestEveryPage(PageSweep):
                 run=run, step=0, team=card.team, opponent={card.role: card.pk}, opponent_rarity=Rarity.objects.first()),
             "cards.boosterstock": BoosterStock.objects.get_or_create(
                 user=admin_user, booster=booster, defaults={"refilled_at": opening.opened_at})[0],
+            "cards.weeklymeta": WeeklyMeta.objects.create(week=opening.opened_at.date(), rules={}),
+            "cards.supporter": Supporter.objects.create(user=admin_user, team=card.team),
         }
 
     #: Les écrans en lecture seule n'ont pas de formulaire d'ajout.
@@ -120,6 +124,9 @@ class TestEveryPage(PageSweep):
         # Une équipe n'est visible que de son propriétaire ; supprimer = POST.
         "cards:roster_edit": (404,),
         "cards:roster_delete": (405,),
+        "cards:weekly_reset": (405,),
+        "cards:supporter": (405,),
+        "site:cards_weeklymeta_add": (403,),
     }
 
     def value_for(self, url_name, argument, records):

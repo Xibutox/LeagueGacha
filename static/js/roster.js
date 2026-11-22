@@ -55,6 +55,15 @@
     return node;
   }
 
+  var rules = data.rules || {};
+  var metaChampions = data.metaChampions || {};
+  // Le bonus de la méta de la semaine pour une carte / un champion à un poste.
+  function cardMeta(card) { return card && card.meta ? card.meta : 0; }
+  function champMeta(role, championId) { return (metaChampions[role] || {})[championId] || 0; }
+  function bonusTag(pct, title) {
+    return pct ? el("span", { class: "meta-tag", title: title || "Bonus de la méta de la semaine", text: "+" + pct + " %" }) : null;
+  }
+
   function fmt(x) { return x === null || x === undefined ? "—" : (Math.round(x * 10) / 10).toLocaleString("fr-FR"); }
 
   // La note d'un joueur sur un champion : son affinité, ou sa note moins la pénalité.
@@ -94,11 +103,12 @@
           card.photo ? el("img", { src: card.photo, alt: "" }) : el("span", { text: card.ign.slice(0, 2) }),
         ]));
         playerBtn.appendChild(el("span", { class: "pp-text" }, [
-          el("b", { text: card.ign }),
+          el("b", { text: card.ign + (card.fan ? " ♥" : "") }),
           el("small", { text: card.team + " · " + card.split }),
           el("span", { class: "pp-line" }, [
             el("span", { class: "pp-rating", title: "Note sur la période", text: fmt(card.rating) }),
             el("span", { class: "pp-rarity", text: card.rarity.name + (card.rarity.bonus ? " +" + fmt(card.rarity.bonus) + " %" : "") }),
+            bonusTag(cardMeta(card), rules[role] ? rules[role].label : ""),
           ]),
         ]));
       } else {
@@ -124,9 +134,10 @@
           if (champ) {
             var r = rating(st.card, cid);
             btn.appendChild(el("img", { src: champ.icon, alt: "", loading: "lazy" }));
+            var cm = champMeta(role, cid);
             btn.appendChild(el("span", { class: "cs-text" }, [
               el("b", { text: champ.name }),
-              el("small", { text: r.played ? "note " + fmt(r.rating) : "jamais joué · " + fmt(r.rating) }),
+              el("small", { text: (r.played ? "note " + fmt(r.rating) : "jamais joué · " + fmt(r.rating)) + (cm ? " · méta +" + cm + " %" : "") }),
             ]));
             btn.appendChild(el("span", { class: "cs-score", title: "Score du poste dans cette composition", text: res ? fmt(res.score) : "" }));
           } else {
@@ -193,7 +204,8 @@
     var complete = result && result.complete;
     totalEl.textContent = complete ? fmt(result.score) : "—";
     totalEl.parentNode.classList.toggle("is-complete", !!complete);
-    if (complete) totalLabel.textContent = "score de l'équipe : la moyenne des 5 compositions";
+    var fan = result && result.supporter && result.supporter.players ? result.supporter : null;
+    if (complete) totalLabel.textContent = "score de l'équipe : la moyenne des 5 compositions" + (fan ? ", +" + fan.bonus + " % équipe de cœur (" + fan.team + ")" : "");
     else {
       var filled = 0;
       data.roles.forEach(function (role) { filled += state[role].champions.filter(Boolean).length; });
@@ -218,7 +230,7 @@
     fetch(data.previewUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-CSRFToken": csrf },
-      body: JSON.stringify({ picks: picks() }),
+      body: JSON.stringify({ picks: picks(), week: !!data.week }),
       credentials: "same-origin",
     })
       .then(function (r) { return r.json(); })
@@ -251,13 +263,18 @@
 
   function openPlayers(role) {
     pickerPlayedWrap.hidden = true;
-    pickerNote.textContent = "Le bonus de rareté vient de ton meilleur exemplaire du joueur.";
+    var rule = rules[role];
+    pickerNote.textContent = "Le bonus de rareté vient de ton meilleur exemplaire du joueur." +
+      (rule && rule.on_card ? " Méta de la semaine : " + rule.label + " (+" + rule.bonus + " %)." : "") +
+      (data.supporter ? " ♥ : joueur de " + data.supporter + " (+1 % au total)." : "");
     openPicker("Choisir un " + role, { kind: "player", role: role });
   }
   function openChampions(role, index) {
     pickerPlayedWrap.hidden = false;
     var card = cards[state[role].card];
-    pickerNote.textContent = card.ign + " : note sur les champions joués (la période compte pleinement, l'historique d'avant à moitié). Un champion jamais joué en compétition vaut sa note moins " + data.penalty + ".";
+    var crule = rules[role];
+    pickerNote.textContent = card.ign + " : note sur les champions joués (la période compte pleinement, l'historique d'avant à moitié). Un champion jamais joué en compétition vaut sa note moins " + data.penalty + "." +
+      (crule && !crule.on_card ? " Méta de la semaine : " + crule.label + "." : "");
     openPicker(card.ign + ", composition " + (index + 1), { kind: "champion", role: role, index: index });
   }
 
@@ -271,7 +288,7 @@
       data.roles.forEach(function (r) { if (r !== mode.role && state[r].card) used[cards[state[r].card].ign] = true; });
       (data.cards[mode.role] || []).filter(function (c) {
         return !q || (c.ign + " " + c.team + " " + c.split).toLowerCase().indexOf(q) >= 0;
-      }).forEach(function (c) {
+      }).sort(function (a, b) { return cardMeta(b) - cardMeta(a); }).forEach(function (c) {
         var taken = used[c.ign];
         pickerGrid.appendChild(el("button", {
           type: "button", class: "pick-player" + (state[mode.role].card === c.id ? " is-current" : ""),
@@ -281,10 +298,11 @@
         }, [
           el("span", { class: "pp-photo" }, [c.photo ? el("img", { src: c.photo, alt: "", loading: "lazy" }) : el("span", { text: c.ign.slice(0, 2) })]),
           el("span", { class: "pp-text" }, [
-            el("b", { text: c.ign }), el("small", { text: c.team + " · " + c.split }),
+            el("b", { text: c.ign + (c.fan ? " ♥" : "") }), el("small", { text: c.team + " · " + c.split }),
             el("span", { class: "pp-line" }, [
               el("span", { class: "pp-rating", text: fmt(c.rating) }),
               el("span", { class: "pp-rarity", text: c.rarity.name + (c.rarity.bonus ? " +" + fmt(c.rarity.bonus) + " %" : "") }),
+              bonusTag(cardMeta(c)),
             ]),
           ]),
         ]));
@@ -319,6 +337,7 @@
       }, [
         el("img", { src: c.portrait, alt: "", loading: "lazy" }),
         el("span", { class: "pc-rating", text: fmt(r.rating) }),
+        bonusTag(champMeta(mode.role, c.id)),
         el("span", { class: "pc-text" }, [el("b", { text: c.name }), el("small", { text: blocked || games })]),
       ]));
     });
