@@ -2,8 +2,8 @@
 celles du booster de base.
 
 Les noms Leaguepedia ont changé avec les années (EU LCS → LEC, NA LCS →
-LCS) : on liste les noms courts et complets connus, l'import prend ceux
-qui existent.
+LCS → LTA North en 2025 → LCS, OGN Champions → LCK) : on liste les noms
+courts et complets connus, l'import prend ceux qui existent.
 """
 
 from __future__ import annotations
@@ -13,9 +13,12 @@ from django.db.models import Q
 #: Les quatre ligues majeures du booster de base, sous tous leurs noms.
 MAJOR_LEAGUES = {
     "LEC": ("LEC", "EU LCS", "LoL EMEA Championship", "Europe League Championship Series"),
-    "LCK": ("LCK", "LoL Champions Korea", "Champions"),
+    # 2012-2015 : OGN « LoL The Champions » (LTC sur Leaguepedia).
+    "LCK": ("LCK", "LoL Champions Korea", "Champions", "LTC", "LoL The Champions"),
     "LPL": ("LPL", "Tencent LoL Pro League"),
-    "LCS": ("LCS", "NA LCS", "League Championship Series", "League of Legends Championship Series", "North America League Championship Series"),
+    # 2025 : la LCS est devenue la LTA North.
+    "LCS": ("LCS", "NA LCS", "League Championship Series", "League of Legends Championship Series",
+            "LTA N", "League of Legends Championship of The Americas North", "North America League Championship Series"),
 }
 
 #: Les compétitions internationales de Riot qui qualifient une équipe pour

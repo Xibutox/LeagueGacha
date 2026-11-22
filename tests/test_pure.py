@@ -361,3 +361,14 @@ class PrestigeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CatalogTests(unittest.TestCase):
+    def test_old_and_renamed_major_leagues_are_known(self):
+        from esport.catalog import FULL_IMPORT, MAJOR_LEAGUES
+        from esport.prestige import default_prestige
+
+        self.assertIn("LoL The Champions", MAJOR_LEAGUES["LCK"])  # Corée 2012-2015
+        self.assertIn("League of Legends Championship of The Americas North", MAJOR_LEAGUES["LCS"])  # 2025
+        self.assertIn("LTA N", FULL_IMPORT)
+        self.assertEqual(default_prestige("LTC", "Korea", "Primary"), default_prestige("LCK"))

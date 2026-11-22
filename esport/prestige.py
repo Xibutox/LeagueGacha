@@ -19,7 +19,7 @@ from __future__ import annotations
 #: Par nom court Leaguepedia (en majuscules).
 DEFAULT_PRESTIGE = {
     # Les deux ligues les plus relevées.
-    "LCK": 1.00, "LPL": 1.00,
+    "LCK": 1.00, "LPL": 1.00, "LTC": 1.00,  # LTC : la LCK de 2012-2015 (OGN Champions)
     # Les autres ligues majeures.
     "LEC": 0.92,
     "LCS": 0.85, "LTA": 0.85, "LTA N": 0.85, "LTA NORTH": 0.85, "LTA S": 0.80, "LTA SOUTH": 0.80,

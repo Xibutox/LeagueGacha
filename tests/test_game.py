@@ -1086,3 +1086,13 @@ def test_the_ranking_shows_each_teams_cards(client, bob, full_team, owned):
     html = page.content.decode()
     assert html.count('class="thumb"') == 10  # podium + tableau
     assert reverse("cards:card_detail", args=[owned["Mid"].pk]) in html
+
+
+def test_the_old_korean_league_and_lta_north_join_the_base_booster(split):
+    from cards.services import ensure_boosters
+
+    ltc = make_league("LoL The Champions", "LTC", "Korea")
+    lta = make_league("League of Legends Championship of The Americas North", "LTA N", "Americas")
+    ensure_boosters()
+    base = Booster.objects.get(slug="base")
+    assert {ltc, lta} <= set(base.leagues.all())
