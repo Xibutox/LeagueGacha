@@ -37,7 +37,7 @@
 .fl-bar em { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
   font: 600 .78rem/1 var(--body); font-style: normal; text-shadow: 0 1px 2px #000; }
 
-.fl-target { display: block; margin: 6px auto; width: min(340px, 80%); aspect-ratio: 1; background: none; border: 0; padding: 0;
+.fl-target { display: block; margin: 6px auto; width: min(200px, 55%); aspect-ratio: 1; background: none; border: 0; padding: 0;
   cursor: crosshair; position: relative; touch-action: manipulation; user-select: none; -webkit-user-select: none; }
 .fl-placeholder { display: flex; align-items: center; justify-content: center; width: 70%; height: 70%; margin: 15%;
   clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: var(--rift-2);
@@ -55,17 +55,14 @@
   animation: fl-up .9s ease-out forwards; }
 .fl-float.is-crit { color: #ffb347; font-size: 1.6rem; }
 .fl-float.is-gold { color: var(--gold); }
-.fl-float.is-smite { color: var(--hextech); font-size: 1.8rem; }
+.fl-float.is-passive { color: #b78cff; font-size: 1.05rem; }
 @keyframes fl-up { to { transform: translateY(-60px); opacity: 0; } }
 @media (prefers-reduced-motion: reduce) { .fl-float, .fl-target.is-hit img, .fl-rage { animation: none; } }
 
 .fl-player { display: flex; align-items: center; gap: 12px; justify-content: center; flex-wrap: wrap; }
 .fl-player .fl-bar { flex: 1 1 300px; margin: 0; }
-.fl-smite { background: var(--rift-2); border: 1px solid var(--hextech); color: var(--text); padding: 6px 14px; cursor: pointer;
-  display: flex; flex-direction: column; align-items: center; min-width: 120px; }
-.fl-smite b { font: 700 1rem/1.1 var(--display); color: var(--hextech); }
-.fl-smite small { color: var(--muted); }
-.fl-smite:disabled { opacity: .5; cursor: default; border-color: var(--steel); }
+.fl-stasis { position: absolute; top: 6px; left: 6px; background: var(--gold); color: #241800; font: 800 .85rem/1 var(--display); padding: 5px 9px; }
+.fl-kind-hint { grid-column: 1 / -1; margin: 0 0 6px; }
 
 .fl-buffs { list-style: none; padding: 0; margin: 12px 0 0; display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; min-height: 40px; }
 .fl-buffs li { display: flex; align-items: center; gap: 4px; background: rgba(0, 0, 0, .3); border: 1px solid var(--steel); padding: 2px 8px 2px 2px; font-size: .8rem; }

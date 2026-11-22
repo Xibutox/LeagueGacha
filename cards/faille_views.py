@@ -19,6 +19,10 @@ def faille_page(request):
     offline = faille.credit_offline(run)
     data = faille.page_data(run)
     data["offlineGold"] = round(offline)
+    refund = run.state.pop("refund", None)
+    if refund:
+        data["refund"] = refund
+        run.save(update_fields=["state"])
     data["urls"] = {key: reverse(f"cards:faille_{name}") for key, name in (
         ("sync", "sync"), ("buy", "buy"), ("sell", "sell"), ("ornn", "ornn"), ("elixir", "elixir"),
         ("augment", "augment"), ("enemies", "enemies"))}

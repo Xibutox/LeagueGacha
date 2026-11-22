@@ -37,17 +37,20 @@ DDRAGON = {"data": {
 
 
 # --------------------------------------------------------------------- Règles
-def test_item_stats_are_read_from_the_french_description():
-    stats = R.parse_item_stats(DDRAGON["data"]["3031"]["description"])
-    assert stats == {"ad": 75.0, "crit": 25.0, "critdmg": 30.0}
-
-
-def test_the_catalog_keeps_summoners_rift_items_only():
-    cat = {i["id"]: i for i in R.catalog_from_ddragon(DDRAGON)}
-    assert set(cat) == {"1036", "1018", "3031", "1001", "2140"}
-    assert cat["3031"]["kind"] == "legendary" and cat["3031"]["cls"] == "Tireur"
-    assert cat["1036"]["kind"] == "component" and cat["1001"]["kind"] == "boots"
+def test_the_catalog_keeps_the_curated_faille_items_only():
+    cat = R.curate(R.catalog_from_ddragon(DDRAGON))
+    assert set(cat) == {"1036", "1018", "3031", "2140"}  # pas les bottes, ni l'objet d'Arène
+    assert cat["3031"]["kind"] == "legendary" and cat["3031"]["cls"] == "Clic" and cat["3031"]["branch"] == "clic"
+    assert cat["3031"]["stats"] == {"ad": 65, "crit": 25}
+    assert cat["1036"]["kind"] == "component" and cat["1036"]["into"] == ["3031"]
     assert cat["2140"]["kind"] == "elixir" and cat["2140"]["stats"]["ad"] > 0
+
+
+def test_a_missing_component_is_folded_into_the_recipe():
+    data = {"data": dict(DDRAGON["data"], **{"3031": dict(DDRAGON["data"]["3031"], **{"from": ["1036", "9999"]}),
+                                           "9999": ddragon_item("Inconnu", 400)})}
+    cat = R.curate(R.catalog_from_ddragon(data))
+    assert cat["3031"]["from"] == ["1036"] and cat["3031"]["recipe"] == 3400 - 350  # le prix total ne change pas
 
 
 def test_the_enemy_sequence_is_the_same_for_everyone_in_a_week():
@@ -66,20 +69,28 @@ def test_the_enemy_sequence_is_the_same_for_everyone_in_a_week():
 def test_augments_offered_are_distinct_and_never_an_owned_forge():
     rng = random.Random(3)
     for _ in range(50):
-        offer = R.roll_augments(rng, ["forge_tireur"])
+        offer = R.roll_augments(rng, ["forge_clic"])
         assert len(offer) == 3 == len(set(offer))
-        assert "forge_tireur" not in offer
+        assert "forge_clic" not in offer
 
 
 def test_stats_add_items_and_masterworks():
-    cat = {i["id"]: i for i in R.catalog_from_ddragon(DDRAGON)}
+    cat = R.curate(R.catalog_from_ddragon(DDRAGON))
     base = R.compute_stats({}, cat)
     with_ie = R.compute_stats({"inv": [{"id": "3031"}]}, cat)
     ornn = R.compute_stats({"inv": [{"id": "3031", "ornn": True}]}, cat)
-    assert with_ie["ad"] == base["ad"] + 75
-    assert ornn["ad"] == base["ad"] + 75 * R.ORNN_MULT
-    assert with_ie["critdmg"] == 205
+    assert with_ie["ad"] == base["ad"] + 65
+    assert ornn["ad"] == base["ad"] + 65 * R.ORNN_MULT
+    assert with_ie["critdmg"] == base["critdmg"] + 40
+    assert base["passive_dps"] == 0
     assert R.max_dps(ornn) > R.max_dps(with_ie) > R.max_dps(base) > 0
+
+
+def test_magic_items_deal_passive_damage():
+    cat = {"3089": {"id": "3089", "stats": {"ap": 130}, "passive": R.PASSIVES["3089"]}}
+    stats = R.compute_stats({"inv": [{"id": "3089"}]}, cat)
+    assert stats["ap"] == pytest.approx(130 * 1.4)
+    assert stats["passive_dps"] == pytest.approx(130 * 1.4 * R.AP_DPS)
 
 
 # --------------------------------------------------------------------- Partie
@@ -160,7 +171,7 @@ def test_the_baron_offers_an_augment_and_a_forge_unlocks_ornn(bob, catalog):  # 
     assert run.state["pending"] == []
     with pytest.raises(faille.FailleError, match="Forge d'Ornn"):
         faille.ornn(run, 0)
-    run.state["augments"].append("forge_tireur")
+    run.state["augments"].append("forge_clic")
     run.state["gold"] = 5000
     faille.ornn(run, 0)
     assert run.state["inv"][0]["ornn"]
@@ -216,3 +227,22 @@ def test_the_page_and_the_api(client, bob, catalog):  # noqa: F811
 def test_the_page_says_when_the_game_is_not_imported(client, bob):  # noqa: F811
     client.force_login(bob)
     assert "pas encore prêt" in client.get(reverse("cards:faille")).content.decode()
+
+
+def test_an_old_run_is_migrated_with_a_refund(bob, catalog):  # noqa: F811
+    run = faille.get_run(bob)
+    run.state.update(v=1, gold=0, inv=[{"id": "1001", "ornn": False}, {"id": "1036", "ornn": False}],
+                     augments=["forge_tireur", "forge_assassin", "forge_mage"])
+    run.save()
+    run = faille.get_run(bob)
+    assert [s["id"] for s in run.state["inv"]] == ["1036"]
+    assert run.state["gold"] == 300 and run.state["refund"] == 300  # les bottes remboursées
+    assert run.state["augments"] == ["forge_clic", "forge_passif"]
+
+
+def test_support_gold_generation_pays_while_playing(bob, catalog):  # noqa: F811
+    run = faille.get_run(bob)
+    gold = run.state["gold"]
+    run.state["synced"] = time.time() - 100
+    assert faille.apply_sync(run, {"duration": 100})["ok"]
+    assert run.state["gold"] == pytest.approx(gold + R.BASE["goldgen"] / 10 * 100, rel=0.01)

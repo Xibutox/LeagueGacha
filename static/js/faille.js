@@ -59,12 +59,17 @@
     off.hidden = false;
     off.textContent = "Pendant ton absence, ta génération d'or t'a rapporté " + fmt(data.offlineGold) + " PO.";
   }
+  if (data.refund) {
+    var rf = $("fl-offline");
+    rf.hidden = false;
+    rf.textContent = (data.offlineGold ? rf.textContent + " " : "") + "La boutique a été simplifiée : tes objets retirés t'ont été remboursés (" + fmt(data.refund) + " PO).";
+  }
 
   // ------------------------------------------------------------------ État local
   var buffs = []; // buffs de monstres : {kind, until}
   var pending = { kills: {}, losses: {}, clicks: 0, gold: 0, duration: 0, noclick: [] };
   var streak = 0, bestStreak = 0;
-  var fight = null, travel = 0, smiteReady = 0;
+  var fight = null, travel = 0, passiveShown = 0, passiveTimer = 0;
   var autoAdvance = true;
   var stats = null;
 
@@ -175,14 +180,6 @@
   }
   function ownsAny(ids) { return (state.inv || []).some(function (s) { return ids.indexOf(s.id) >= 0; }); }
 
-  function smite() {
-    if (!fight || fight.done || now() < smiteReady || fight.isMinion) return;
-    var dmg = fight.smite();
-    smiteReady = now() + E.smiteCooldown(stats);
-    float(big(dmg), "smite");
-    if (fight.done === "win") win();
-  }
-
   function float(text, kind, ev) {
     var box = $("fl-floats");
     var x = 50 + (Math.random() * 40 - 20), y = 40 + (Math.random() * 20 - 10);
@@ -200,13 +197,19 @@
     last = t;
     if (!document.hidden) {
       pending.duration += dt;
+      if (stats) state.gold += stats.goldgen / 10 * dt;  // génération d'or (le serveur fait le même calcul)
       buffs = buffs.filter(function (b) { return b.until > now(); });
       if (!fight) {
         travel -= dt;
         if (travel <= 0) startFight();
       } else {
         fight.stats = computeStats();
+        var hpBefore = fight.hp;
         var res = fight.tick(dt);
+        // Les dégâts passifs s'affichent une fois par seconde.
+        passiveShown += Math.max(0, hpBefore - Math.max(0, fight ? fight.hp : 0));
+        passiveTimer += dt;
+        if (passiveTimer >= 1) { if (passiveShown >= 1) float(big(passiveShown), "passive"); passiveShown = 0; passiveTimer = 0; }
         if (res === "win") win();
         else if (res === "lose") lose();
       }
@@ -292,10 +295,7 @@
     $("fl-player-hp").style.width = (q * 100) + "%";
     $("fl-player-hp-text").textContent = big(Math.max(0, fight.playerHp)) + " / " + big(fight.playerMax) + " PV";
     $("fl-rage").hidden = !fight.enraged();
-    var left = smiteReady - now();
-    var sm = $("fl-smite");
-    sm.disabled = left > 0 || fight.isMinion;
-    $("fl-smite-cd").textContent = fight.isMinion ? "monstres seulement" : left > 0 ? Math.ceil(left) + " s" : "prêt";
+    $("fl-stasis").hidden = !fight.inStasis();
   }
   function renderCounters() {
     $("fl-kills").textContent = big(state.kills || 0);
@@ -333,11 +333,10 @@
   }
 
   var STAT_ROWS = [
-    ["ad", "Dégâts d'attaque"], ["ap", "Puissance"], ["autos", "Attaques/s", 2], ["crit", "Coup critique", 0, "%"],
-    ["critdmg", "Dégâts critiques", 0, "%"], ["hp", "PV"], ["armor", "Armure"], ["mr", "Résistance magique"],
-    ["lethality", "Létalité"], ["armorpen", "Pénétration d'armure", 0, "%"], ["mpen", "Pénétration magique"],
-    ["lifesteal", "Vol de vie", 0, "%"], ["omnivamp", "Omnivampirisme", 0, "%"], ["ms_total", "Vitesse de déplacement"],
-    ["goldgen", "PO toutes les 10 s", 1],
+    ["click_avg", "Dégâts par clic (moyenne)"], ["ad", "Dégâts d'attaque"], ["crit", "Coup critique (clics)", 0, "%"],
+    ["critdmg", "Dégâts critiques", 0, "%"], ["lifesteal", "Vol de vie (clics)", 0, "%"],
+    ["passive_dps", "Dégâts passifs par seconde"], ["ap", "Puissance"],
+    ["hp", "PV"], ["regen", "PV rendus par seconde", 1], ["goldgen", "PO toutes les 10 s", 1], ["gold_pct", "Or des sbires", 0, " %", true],
   ];
   function renderStats() {
     var s = computeStats();
@@ -345,8 +344,8 @@
     dl.textContent = "";
     STAT_ROWS.forEach(function (r) {
       var v = s[r[0]];
-      if (!v && ["lethality", "armorpen", "mpen", "lifesteal", "omnivamp", "ap"].indexOf(r[0]) >= 0) return;
-      dl.appendChild(el("div", {}, [el("dt", { text: r[1] }), el("dd", { text: fmt(v, r[2]) + (r[3] || "") })]));
+      if (!v && ["lifesteal", "ap", "passive_dps", "gold_pct", "crit"].indexOf(r[0]) >= 0) return;
+      dl.appendChild(el("div", {}, [el("dt", { text: r[1] }), el("dd", { text: (r[4] ? "+" : "") + fmt(v, r[2]) + (r[3] || "") })]));
     });
   }
 
@@ -403,13 +402,20 @@
     box.appendChild(stats);
     if (!stats.children.length && !it.passive) box.appendChild(el("p", { class: "muted small", text: "Aucune stat utile dans la Faille : cet objet sert surtout de composant." }));
     if (it.passive) box.appendChild(el("p", { class: "fl-passive", text: it.passive.label }));
-    if (it.cls) box.appendChild(el("p", { class: "muted small", text: "Classe " + it.cls + " (Forge d'Ornn : " + it.cls + ")" }));
+    if (it.cls) box.appendChild(el("p", { class: "muted small", text: "Branche " + it.cls + " (Forge d'Ornn : " + it.cls + ")" }));
     return box;
   }
 
   // ------------------------------------------------------------------ Boutique
-  var KINDS = [["component", "Composants"], ["epic", "Épiques"], ["legendary", "Légendaires"], ["boots", "Bottes"], ["elixir", "Élixirs"]];
-  var shopKind = "component", selected = null;
+  var KINDS = [["clic", "Clic"], ["passif", "Passif"], ["tank", "Tank"], ["support", "Support"], ["elixir", "Élixirs"]];
+  var KIND_HINTS = {
+    clic: "Objets physiques : les dégâts de tes clics, les coups critiques, le vol de vie.",
+    passif: "Objets magiques : des dégâts chaque seconde, sans cliquer. Plus chers à lancer, ils finissent par dépasser les clics.",
+    tank: "Des PV et de la régénération : des combats plus longs, utiles contre les gros monstres.",
+    support: "Des investissements : de l'or toutes les 10 s (même hors ligne) et plus d'or par sbire.",
+    elixir: "Un bonus de " + data.rules.elixirMinutes + " min. Chaque élixir acheté cette semaine coûte 30 % de plus.",
+  };
+  var shopKind = "clic", selected = null;
   function renderKinds() {
     var box = $("fl-kinds");
     box.textContent = "";
@@ -433,8 +439,11 @@
     var list = Object.keys(cat).map(function (id) { return cat[id]; }).filter(function (it) {
       if (!it.buyable && it.kind !== "elixir") return false;
       if (q) return it.name.toLowerCase().indexOf(q) >= 0;
-      return it.kind === shopKind;
-    }).sort(function (a, b) { return a.cost - b.cost || a.name.localeCompare(b.name); });
+      return (it.kind === "elixir" ? "elixir" : it.branch) === shopKind;
+    }).sort(function (a, b) {
+      return (a.kind === "legendary") - (b.kind === "legendary") || a.cost - b.cost || a.name.localeCompare(b.name);
+    });
+    if (!q) box.appendChild(el("p", { class: "fl-kind-hint muted small", text: KIND_HINTS[shopKind] }));
     list.forEach(function (it) {
       var c = costOf(it.id);
       var afford = state.gold >= c.cost;
@@ -463,7 +472,7 @@
         if (!sub) return;
         var owned = state.inv.some(function (s) { return s.id === id; });
         tree.appendChild(el("button", { type: "button", class: "fl-tree-item" + (owned ? " is-owned" : ""), title: sub.name + (owned ? " (possédé)" : ""),
-          onclick: function () { selected = id; shopKind = sub.kind; renderKinds(); renderShop(); renderDetail(); } }, [el("img", { src: sub.icon, alt: sub.name })]));
+          onclick: function () { selected = id; shopKind = sub.branch; renderKinds(); renderShop(); renderDetail(); } }, [el("img", { src: sub.icon, alt: sub.name })]));
       });
       tree.appendChild(el("span", { class: "muted small", text: "+ " + fmt(it.recipe) + " PO" }));
       box.appendChild(tree);
@@ -474,7 +483,7 @@
         var up = cat[id];
         if (!up) return;
         into.appendChild(el("button", { type: "button", class: "fl-tree-item", title: up.name,
-          onclick: function () { selected = id; shopKind = up.kind; renderKinds(); renderShop(); renderDetail(); } }, [el("img", { src: up.icon, alt: up.name })]));
+          onclick: function () { selected = id; shopKind = up.branch; renderKinds(); renderShop(); renderDetail(); } }, [el("img", { src: up.icon, alt: up.name })]));
       });
       box.appendChild(into);
     }
@@ -549,7 +558,6 @@
   // ------------------------------------------------------------------ Commandes
   $("fl-target").addEventListener("pointerdown", function (e) { e.preventDefault(); click(e); });
   $("fl-target").addEventListener("keydown", function (e) { if (e.key === " " || e.key === "Enter") { e.preventDefault(); click(e); } });
-  $("fl-smite").addEventListener("click", smite);
   $("fl-auto").addEventListener("change", function (e) { autoAdvance = e.target.checked; });
   $("fl-prev").addEventListener("click", function () { if (state.step > 0) { state.step -= 1; endFight("is-away", "En route vers l'étape " + state.step + "…"); travel = 0.2; } });
   $("fl-next").addEventListener("click", function () { if (state.step < state.best) { state.step += 1; endFight("is-away", "En route vers l'étape " + state.step + "…"); travel = 0.2; } });

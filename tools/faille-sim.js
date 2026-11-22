@@ -7,8 +7,11 @@ const R = require(require("path").resolve(process.env.RULES || "faille-rules.jso
 function mulberry(seed) { return function () { seed |= 0; seed = seed + 0x6D2B79F5 | 0; let t = Math.imul(seed ^ seed >>> 15, 1 | seed); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
 
 const PLANS = {
-  adc: ["3006", "3031", "3085", "6676", "3004", "3153", "3053"],
-  mage: ["3020", "3089", "3115", "6653", "3135", "3041", "4645"],
+  clic: ["3031", "6676", "3072", "3004", "3153", "3036"],
+  passif: ["3089", "3135", "6653", "3041", "3115", "6655"],
+  mixte: ["3031", "3089", "3135", "3072", "3083", "6653"],
+  mage: ["3089", "3135", "6653", "3157", "3041", "3083"],
+  eco: ["3865", "3190", "3089", "3135", "6653", "3041"],
 };
 const OFFLINE_CAP = 12 * 3600;
 const OFFLINE_RATE = Number(process.env.OFFLINE_RATE || 0.5);
@@ -18,7 +21,7 @@ function simulate(profile) {
   const cat = R.catalog;
   const run = { inv: [], stacks: {}, drakes: [], soul: null, grubs: 0, augments: [], temp: [], buffs: [] };
   let gold = 500, step = 0, best = 0, kills = 0, now = 0, augOffers = 0, rewards = {};
-  const plan = PLANS[profile.plan || "adc"];
+  const plan = PLANS[profile.plan || process.env.PLAN || "clic"];
   const forgeCls = new Set(plan.map((id) => cat[id] && cat[id].cls).filter(Boolean));
   let fullAt = null;
   const days = 7;
@@ -30,7 +33,7 @@ function simulate(profile) {
     if (day > 0) gold += st0.goldgen / 10 * Math.min(offline, OFFLINE_CAP) * OFFLINE_RATE;
     now += offline;
     let active = profile.minutes * 60;
-    let fight = null, travel = 0, smiteCd = 0, clickAcc = 0, losses = 0, lastLoss = -1, farmUntil = -1, farmStep = 0, invLen = run.inv.length, goldMark = 0;
+    let fight = null, travel = 0, clickAcc = 0, losses = 0, lastLoss = -1, farmUntil = -1, farmStep = 0, invLen = run.inv.length, goldMark = 0;
     const dt = 0.1;
     while (active > 0) {
       active -= dt; now += dt;
@@ -49,13 +52,13 @@ function simulate(profile) {
       fight.stats = stats;
       clickAcc += profile.cps * dt;
       while (clickAcc >= 1 && !fight.done) { clickAcc -= 1; fight.click(); run.stacks.tear = (run.stacks.tear || 0) + 1; }
-      smiteCd -= dt;
-      if (smiteCd <= 0 && !fight.isMinion && !fight.done) { fight.smite(); smiteCd = E.smiteCooldown(stats); }
       const res = fight.tick(dt);
       if (res === "win") {
         const e = fight.enemy;
         kills++;
-        gold += E.goldFor(e, stats, gold, best);
+        const g = E.goldFor(e, stats, gold, best);
+        gold += g;
+        if (run.inv.some((s) => s.id === "3865")) run.atlasGold = (run.atlasGold || 0) + g;
         if (!fight.isMinion) {
           run.stacks.heartsteel = (run.stacks.heartsteel || 0) + 1;
           run.stacks.tank_engine = (run.stacks.tank_engine || 0) + 1;
@@ -87,6 +90,12 @@ function simulate(profile) {
       invLen = run.inv.length;
       // Manamune → Muramana
       run.inv.forEach((s) => { if (s.id === "3004" && (run.stacks.tear || 0) >= 360) s.id = "3042"; });
+      const gen = stats.goldgen / 10 * dt;
+      gold += gen;
+      if (run.inv.some((s) => s.id === "3865")) {
+        run.atlasGold = (run.atlasGold || 0) + gen;
+        if (run.atlasGold >= 2000) run.inv.forEach((s) => { if (s.id === "3865") s.id = "3869"; });
+      }
       const masterworks = run.inv.filter((s) => s.ornn).length;
       if (masterworks >= 6 && fullAt === null) fullAt = day + 1;
     }
@@ -103,7 +112,7 @@ function simulate(profile) {
       }
     });
     // Prochain objet du plan pas encore possédé.
-    const owned = new Set(run.inv.map((s) => (s.id === "3042" ? "3004" : s.id)));
+    const owned = new Set(run.inv.map((s) => (s.id === "3042" ? "3004" : s.id === "3869" ? "3865" : s.id)));
     const target = plan.find((id) => !owned.has(id));
     if (!target) {
       // Plus rien à acheter : un élixir de rage.

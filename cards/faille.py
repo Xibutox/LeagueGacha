@@ -59,22 +59,25 @@ def _data(key: str) -> FailleData | None:
 
 
 def catalog() -> dict:
-    """{id: objet} avec l'URL de son icône (gardé en cache)."""
+    """{id: objet} : les objets de la Faille (faille_rules.CURATED), avec
+    l'URL de leur icône (gardé en cache)."""
     cached = cache.get("faille:catalog")
     if cached is not None:
         return cached
     row = _data("items")
     images = (_data("images") or FailleData()).data or {}
-    items = {}
-    for item in (row.data.get("items", []) if row else []):
-        item = dict(item)
-        item["passive"] = R.PASSIVES.get(item["id"])
+    items = R.curate(row.data.get("items", []) if row else [])
+    for item in items.values():
         local = images.get(f"item:{item['id']}")
         item["icon"] = (game_storage().url(local) if local else
                         f"https://ddragon.leagueoflegends.com/cdn/{row.version}/img/item/{item['id']}.png")
-        items[item["id"]] = item
     cache.set("faille:catalog", items, 3600)
     return items
+
+
+def _raw_costs() -> dict:
+    row = _data("items")
+    return {o["id"]: o.get("cost", 0) for o in (row.data.get("items", []) if row else [])}
 
 
 def enemy_images() -> dict:
@@ -108,10 +111,10 @@ def sync(images: bool = True, log=None) -> dict:
     raw = session.get(f"{DDRAGON}/cdn/{version}/data/fr_FR/item.json", timeout=60).json()
     items = R.catalog_from_ddragon(raw)
     FailleData.objects.update_or_create(key="items", defaults={"version": version, "data": {"items": items}})
-    log(f"Data Dragon {version} : {len(items)} objets")
-    result = {"version": version, "items": len(items), "images": 0}
+    log(f"Data Dragon {version} : {len(R.curate(items))} objets de la Faille")
+    result = {"version": version, "items": len(R.curate(items)), "images": 0}
     if images:
-        result["images"] = _download_images(session, version, items, log)
+        result["images"] = _download_images(session, version, list(R.curate(items).values()), log)
     cache.delete("faille:catalog")
     return result
 
@@ -179,7 +182,7 @@ def _new_state() -> dict:
         "step": 0, "best": 0, "gold": START_GOLD, "inv": [], "stacks": {}, "drakes": [], "soul": None, "grubs": 0,
         "augments": [], "temp": [], "pending": [], "rewards": [], "elixirs": [], "elixir_count": 0,
         "kills_by": {}, "gold_earned": 0.0, "atlas_gold": 0.0, "max_streak": 0, "noclick": False,
-        "clicks": 0, "offline": 0, "synced": time.time(),
+        "clicks": 0, "offline": 0, "synced": time.time(), "v": 2,
     }
 
 
@@ -192,7 +195,40 @@ def get_run(user, create: bool = True) -> FailleRun | None:
             run = FailleRun.objects.create(user=user, week=week, state=_new_state())
         except IntegrityError:
             run = FailleRun.objects.get(user=user, week=week)
+    if run is not None and run.state.get("v", 1) < STATE_VERSION:
+        _migrate(run)
     return run
+
+
+#: v2 : catalogue simplifié (une quarantaine d'objets, 4 branches).
+STATE_VERSION = 2
+
+
+def _migrate(run: FailleRun) -> None:
+    """Une partie commencée avant la simplification : les objets retirés
+    sont remboursés au prix plein, les Forges d'Ornn passent aux branches."""
+    state = run.state
+    cat = catalog()
+    if cat:
+        costs = _raw_costs()
+        refund = sum(costs.get(slot["id"], 0) for slot in state.get("inv") or [] if slot["id"] not in cat)
+        state["inv"] = [slot for slot in state.get("inv") or [] if slot["id"] in cat]
+        state["gold"] = state.get("gold", 0) + refund
+        state["elixirs"] = [x for x in state.get("elixirs") or [] if x["id"] in cat]
+        if refund:
+            state["refund"] = round(refund)
+    augments = []
+    for code in state.get("augments") or []:
+        code = R.OLD_FORGES.get(code, code)
+        if code in R.AUGMENTS and code not in augments:
+            augments.append(code)
+    state["augments"] = augments
+    state["temp"] = [t for t in state.get("temp") or [] if t["code"] in R.AUGMENTS]
+    state["pending"] = [[R.OLD_FORGES.get(c, c) for c in offer if R.OLD_FORGES.get(c, c) in R.AUGMENTS]
+                        for offer in state.get("pending") or []]
+    state["v"] = STATE_VERSION
+    run.state = state
+    run.save(update_fields=["state"])
 
 
 def credit_offline(run: FailleRun, now: float | None = None) -> float:
@@ -244,12 +280,18 @@ def apply_sync(run: FailleRun, payload: dict, now: float | None = None) -> dict:
         claim = float(payload.get("gold") or 0)
     except (TypeError, ValueError):
         return {"ok": False, "reason": "Sauvegarde illisible."}
+    stats = R.compute_stats(state, cat, now)
+    # Génération d'or (objets de support) pendant le jeu, à plein rendement.
+    passive_gold = stats["goldgen"] / 10 * duration
+    state["gold"] = state.get("gold", 0) + passive_gold
+    state["gold_earned"] = state.get("gold_earned", 0) + passive_gold
+    if _owns(state, {R.ATLAS_ID}):
+        state["atlas_gold"] = state.get("atlas_gold", 0) + passive_gold
     if not kills and not clicks and not losses:
         state["synced"] = now
         run.save(update_fields=["state"])
         return {"ok": True, "new": []}
 
-    stats = R.compute_stats(state, cat, now)
     seed = R.week_seed(run.week.isoformat())
     elder = bool(state.get("soul"))
     best = int(state.get("best", 0))
@@ -263,12 +305,12 @@ def apply_sync(run: FailleRun, payload: dict, now: float | None = None) -> dict:
         if step == best:
             best += 1
         killed.append((enemy, count))
-        # Châtiment retire 15 % des PV d'un monstre.
-        total_hp += enemy["hp"] * count * (1 if enemy["kind"] in R.MINIONS else 0.85)
+        total_hp += enemy["hp"] * count
         base_gold += _gold_for(enemy, stats, state.get("gold", 0), best) * count
     if best - old_best > duration / 0.5 + 1:
         return {"ok": False, "reason": "Progression trop rapide."}
-    if total_hp > R.max_dps(stats) * DPS_MARGIN * max(duration, 1) + 500:
+    budget = R.max_dps(stats) * DPS_MARGIN * max(duration, 1) + 500
+    if total_hp > budget:
         return {"ok": False, "reason": "Dégâts impossibles avec ton build."}
 
     gold = min(max(0.0, claim), base_gold * GOLD_BUFF_ALLOWANCE) if claim else base_gold
@@ -386,7 +428,7 @@ def buy(run: FailleRun, item_id: str, now: float | None = None) -> dict:
     if not item or not item.get("buyable") or item["kind"] == "elixir":
         raise FailleError("Cet objet n'est pas en vente.")
     state = run.state
-    if item["kind"] in ("legendary", "boots") and any(s["id"] == item["id"] for s in state["inv"]):
+    if item["kind"] == "legendary" and any(s["id"] == item["id"] for s in state["inv"]):
         raise FailleError("Tu as déjà cet objet.")
     cost, used = purchase_cost(item["id"], state["inv"], cat)
     cost = round(cost * (1 - _discount(state, now)))
@@ -605,8 +647,9 @@ def page_data(run: FailleRun) -> dict:
         "augments": {c: dict(a, icon=icons[c]) for c, a in R.AUGMENTS.items()},
         "statNames": R.STAT_NAMES,
         "forgeClasses": R.FORGE_CLASSES,
+        "branches": R.BRANCHES,
         "achievements": [{"code": c, "family": f, "label": l, "done": c in have} for c, (f, l) in R.ACHIEVEMENTS.items()],
         "achievementBonus": R.ACHIEVEMENT_BONUS,
-        "rules": {"slots": MAX_SLOTS, "sell": SELL_RATE, "ornn": ORNN_COST, "elixirMinutes": R.ELIXIR_MINUTES,
+        "rules": {"travel": R.TRAVEL_SECONDS, "apDps": R.AP_DPS, "slots": MAX_SLOTS, "sell": SELL_RATE, "ornn": ORNN_COST, "elixirMinutes": R.ELIXIR_MINUTES,
                   "offlineRate": OFFLINE_RATE, "farmPenalty": R.FARM_PENALTY_PER_STEP, "farmMin": R.FARM_MIN},
     }

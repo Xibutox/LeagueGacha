@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}La Faille — LeagueGacha{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'css/faille.css' %}?v=25">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'css/faille.css' %}?v=26">{% endblock %}
 {% block content %}
 {% if not ready %}
   <div class="page-head"><div><h1>La Faille</h1><p>Le mini-jeu n'est pas encore prêt : ses objets et ses images n'ont pas été importés.</p></div></div>
@@ -11,7 +11,7 @@
   <header class="fl-head">
     <div>
       <h1>La Faille</h1>
-      <p class="muted">Clique pour frapper. Les sbires rapportent de l'or, les monstres des buffs, le Nashor des augments. Tout repart à zéro dans <time data-countdown datetime="{{ data.ends|floatformat:0 }}" id="fl-ends"></time>.</p>
+      <p class="muted">Clique pour frapper ; les objets magiques frappent tout seuls. Les sbires rapportent de l'or, les monstres des buffs, le Nashor des augments. Tout repart à zéro dans <time data-countdown datetime="{{ data.ends|floatformat:0 }}" id="fl-ends"></time>.</p>
     </div>
     <dl class="fl-counters">
       <div><dt>Ennemis vaincus</dt><dd id="fl-kills">0</dd></div>
@@ -37,12 +37,12 @@
           <img id="fl-enemy-img" alt="" draggable="false">
           <span class="fl-placeholder" id="fl-enemy-ph" hidden></span>
           <span class="fl-rage" id="fl-rage" hidden>Enragé</span>
+          <span class="fl-stasis" id="fl-stasis" hidden>Stase</span>
         </button>
         <div class="fl-floats" id="fl-floats" aria-hidden="true"></div>
       </div>
       <div class="fl-player">
         <div class="fl-bar fl-bar-player"><span id="fl-player-hp"></span><em id="fl-player-hp-text"></em></div>
-        <button type="button" class="fl-smite" id="fl-smite"><b>Châtiment</b><small id="fl-smite-cd">prêt</small></button>
       </div>
       <ul class="fl-buffs" id="fl-buffs" aria-label="Effets actifs"></ul>
       <ol class="fl-log" id="fl-log" aria-live="polite"></ol>
@@ -97,6 +97,6 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}{% if ready %}
-<script src="{% static 'js/faille-engine.js' %}?v=25"></script>
-<script src="{% static 'js/faille.js' %}?v=25"></script>
+<script src="{% static 'js/faille-engine.js' %}?v=26"></script>
+<script src="{% static 'js/faille.js' %}?v=26"></script>
 {% endif %}{% endblock %}
