@@ -24,6 +24,7 @@
       <div class="who">{{ roster.user.username }}</div>
       <div class="muted small">{{ roster.name }}</div>
       <div class="score">{{ roster.score|floatformat:1 }}</div>
+      <div class="lineup-thumbs">{% for p in roster.lineup %}{% include "cards/_thumb.html" %}{% endfor %}</div>
     </div>
   {% endfor %}
 </div>
@@ -38,13 +39,7 @@
         <td>{{ roster.user.username }}</td>
         <td>{{ roster.name }}</td>
         <td>
-          <div class="mini-lineup">
-            {% for slot in roster.slots.all %}
-              {% with first=slot.champion_list.0 %}
-              <span title="{{ slot.role }}">{% if first %}<img src="{{ first.icon_url }}" alt="" class="champ-icon small" loading="lazy">{% endif %}{{ slot.card.player.ign }}</span>
-              {% endwith %}
-            {% endfor %}
-          </div>
+          <div class="lineup-thumbs">{% for p in roster.lineup %}{% include "cards/_thumb.html" %}{% endfor %}</div>
         </td>
         <td class="num"><b>{{ roster.score|floatformat:1 }}</b></td>
       </tr>

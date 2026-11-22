@@ -640,3 +640,55 @@ button.champ-tile { color: inherit; font: inherit; }
 .game-card.is-new { animation: game-in .6s ease; }
 @keyframes game-in { from { transform: translateY(8px); opacity: .3; } }
 @media (prefers-reduced-motion: reduce) { .game-card.is-new { animation: none; } }
+
+/* Draft animée : l'équipe qui réfléchit, le compte à rebours, le coup qui tombe. */
+.champ-icon.tiny { width: 18px; height: 18px; vertical-align: -4px; margin-right: 4px; }
+.draft-side.is-thinking { box-shadow: inset 0 0 0 1px rgba(226,179,90,.5), 0 0 22px rgba(226,179,90,.12); }
+.draft-side.is-thinking h3::after { content: " · réfléchit"; font-size: .75rem; font-weight: 400; color: var(--gold, #e2b35a);
+  animation: think 1.2s ease-in-out infinite; }
+@keyframes think { 50% { opacity: .35; } }
+.draft-slot.is-fresh .draft-champ { animation: lock-in .7s cubic-bezier(.2, 1.4, .4, 1); color: var(--gold, #e2b35a); }
+.draft-slot.is-fresh { background: linear-gradient(90deg, rgba(226,179,90,.18), transparent 70%); }
+@keyframes lock-in { from { transform: scale(1.6); opacity: 0; filter: brightness(2); } }
+.draft-bans .ban { display: inline-flex; align-items: center; }
+.draft-bans .ban.is-fresh { animation: ban-in .7s ease; color: #f0a09b; }
+@keyframes ban-in { from { transform: scale(1.5) rotate(-6deg); opacity: 0; background: rgba(224,96,90,.5); } }
+.timer { height: 4px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 8px; }
+.timer span { display: block; height: 100%; background: var(--gold, #e2b35a); animation: timer var(--delay, 5000ms) linear forwards; }
+@keyframes timer { from { width: 100%; } to { width: 0; } }
+.draft-turn.is-waiting, .draft-turn.is-auto { border-left-color: var(--hextech, #3fb6c9); }
+.draft-over { border-left-color: #5bd08a; animation: lock-in .6s ease; }
+.draft-over.lost { border-left-color: #e0605a; }
+.special { margin: 10px 0 14px; padding: 10px 14px; background: rgba(63,182,201,.08); border-left: 3px solid var(--hextech, #3fb6c9); }
+.special p { margin: 0 0 6px; font-size: .9rem; }
+.special-list { display: flex; flex-wrap: wrap; gap: 8px; }
+.special-effect { display: inline-flex; align-items: center; gap: 2px; padding: 3px 8px; background: rgba(255,255,255,.05); font-size: .85rem; }
+.special-effect.up b { color: #5bd08a; }
+.special-effect.down b { color: #e0605a; }
+.ct-special { position: absolute; top: 4px; left: 4px; padding: 0 4px; font: 700 .7rem/1.3 var(--display); background: rgba(5,9,18,.85); }
+.ct-special.up { color: #5bd08a; }
+.ct-special.down { color: #e0605a; }
+.auto-mode { margin: -14px 0 26px; padding: 10px 14px; background: rgba(255,255,255,.03); }
+.auto-mode p { margin: 4px 0 8px; max-width: 760px; }
+@media (prefers-reduced-motion: reduce) {
+  .draft-slot.is-fresh .draft-champ, .draft-bans .ban.is-fresh, .draft-over, .draft-side.is-thinking h3::after { animation: none; }
+}
+.game-table td small.up { color: #5bd08a; } .game-table td small.down { color: #e0605a; }
+
+/* Classement : les cartes de chaque équipe en vignettes. */
+.lineup-thumbs { display: grid; grid-template-columns: repeat(5, minmax(0, 72px)); gap: 6px; }
+.podium-step .lineup-thumbs { margin-top: 12px; grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.thumb { display: flex; flex-direction: column; gap: 2px; min-width: 0; color: inherit; text-decoration: none; }
+.thumb-photo { position: relative; aspect-ratio: 1 / 1; overflow: hidden; border-bottom: 3px solid var(--rarity);
+  background: radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--rarity) 35%, #1a2338), #0a1020 75%); }
+.thumb-photo > img:first-child { width: 100%; height: 100%; object-fit: cover; object-position: 50% 15%; display: block; }
+.thumb-photo .nophoto { position: absolute; inset: 0; display: grid; place-items: center; font: 800 1.2rem/1 var(--display); color: var(--rarity); }
+.thumb-ovr { position: absolute; top: 2px; left: 4px; font: 800 .9rem/1 var(--display); color: var(--rarity); text-shadow: 0 1px 4px rgba(0,0,0,.9); }
+.thumb-champ { position: absolute; right: 2px; bottom: 2px; width: 22px; height: 22px; border: 1px solid rgba(0,0,0,.6); }
+.thumb-name { font: 700 .78rem/1.1 var(--display); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumb-meta { font-size: .62rem; color: var(--rarity); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.thumb:hover .thumb-name { color: var(--gold, #e2b35a); }
+@media (max-width: 640px) {
+  .ranking .lineup-thumbs { grid-template-columns: repeat(5, minmax(0, 1fr)); min-width: 220px; }
+  .thumb-meta { display: none; }
+}

@@ -449,9 +449,37 @@ def roster_delete(request, pk):
     return redirect("cards:rosters")
 
 
+def _lineup_cards(roster, best: dict) -> list[dict]:
+    """Les 5 cartes d'une équipe dans l'ordre des postes, avec la rareté
+    retenue pour son score et son premier champion."""
+    by_role = {slot.role: slot for slot in roster.slots.all()}
+    lineup = []
+    for role in ROLES:
+        slot = by_role.get(role)
+        if slot is None:
+            continue
+        rarity = best.get((roster.user_id, slot.card_id))
+        champions = slot.champion_list()
+        lineup.append({"card": slot.card, "role": role, "rarity": rarity,
+                       "champion": champions[0] if champions else None})
+    return lineup
+
+
 def ranking(request):
     """Le classement général : la meilleure équipe complète de chaque joueur."""
     rows = leaderboard()
+    # La meilleure rareté de chaque carte alignée, en une requête.
+    best = {}
+    owned = UserCard.objects.filter(
+        user__in=[r.user_id for _, r in rows],
+        card__in=[slot.card_id for _, r in rows for slot in r.slots.all()],
+    ).select_related("rarity")
+    for copy in owned:
+        key = (copy.user_id, copy.card_id)
+        if key not in best or copy.rarity.order > best[key].order:
+            best[key] = copy.rarity
+    for _, roster in rows:
+        roster.lineup = _lineup_cards(roster, best)
     mine = None
     if request.user.is_authenticated:
         mine = next(((rank, r) for rank, r in rows if r.user_id == request.user.pk), None)

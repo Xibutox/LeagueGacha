@@ -312,7 +312,66 @@ def new_draft(series: TournamentSeries) -> dict:
     side = "blue"
     if series.games:
         side = "red" if series.games[-1]["won"] else "blue"
-    return {"side": side, "actions": []}
+    return {"side": side, "actions": [], "special": special_rule(series)}
+
+
+# --------------------------------------------------------- La particularité
+#: La particularité d'une partie : un joueur du site « en vedette », dont
+#: les champions préférés suivent leur forme à l'époque du tournoi. Le bilan
+#: de chaque champion cette année-là (toutes les parties importées), lissé
+#: vers 50 % comme SPECIAL_PRIOR parties nulles, donne des points :
+#: 60 % de victoires → +SPECIAL_WEIGHT/10 points sur son poste.
+SPECIAL_FAVORITES = 3
+SPECIAL_PRIOR = 20
+SPECIAL_WEIGHT = 60
+SPECIAL_CAP = 8.0
+
+
+def era_rate(champion: str, year: int) -> dict:
+    """Le bilan d'un champion sur une année de compétition."""
+    key = "era:" + hashlib.md5(f"{champion}|{year}".encode()).hexdigest()
+    found = cache.get(key)
+    if found is None:
+        rows = GameAppearance.objects.filter(champion=champion, tournament__split__year=year)
+        found = {"games": rows.count(), "wins": rows.filter(win=True).count()}
+        cache.set(key, found, 24 * 3600)
+    rate = (found["wins"] + SPECIAL_PRIOR / 2) / (found["games"] + SPECIAL_PRIOR)
+    return {**found, "rate": rate}
+
+
+def special_rule(series: TournamentSeries, rng=None) -> dict | None:
+    """Tire la particularité d'une partie (None avant le choix des joueurs)."""
+    if not series.lineup:
+        return None
+    rng = rng or random
+    role = rng.choice(ROLES)
+    card = Card.objects.select_related("player").get(pk=int(series.lineup[role]))
+    year = series.run.tournament.split.year
+    favorites = (
+        CardChampion.objects.filter(card__player=card.player_id).select_related("champion")
+        .order_by("-games", "-history_games")
+    )
+    seen, effects = set(), []
+    for a in favorites:
+        if a.champion_id in seen:
+            continue
+        seen.add(a.champion_id)
+        form = era_rate(a.champion.name, year)
+        points = round(max(-SPECIAL_CAP, min(SPECIAL_CAP, (form["rate"] - 0.5) * SPECIAL_WEIGHT)), 1)
+        effects.append({"champion": a.champion_id, "name": a.champion.name, "rate": round(form["rate"] * 100),
+                        "games": form["games"], "points": points})
+        if len(effects) >= SPECIAL_FAVORITES:
+            break
+    if not effects:
+        return None
+    return {"role": role, "player": card.player.ign, "year": year, "effects": effects}
+
+
+def special_points(draft_or_game: dict, role: str, champion_id: int) -> float:
+    special = (draft_or_game or {}).get("special")
+    if not special or special["role"] != role:
+        return 0.0
+    return next((e["points"] for e in special["effects"] if int(e["champion"]) == int(champion_id)), 0.0)
 
 
 def _team_of(draft: dict, color: str) -> str:
@@ -330,8 +389,8 @@ def next_turn(draft: dict) -> dict | None:
 
 def draft_state(series: TournamentSeries) -> dict:
     """Ce que la draft en cours a déjà fixé."""
-    draft = series.draft or new_draft(series)
-    out = {"side": draft["side"], "bans": {"user": [], "opponent": []},
+    draft = series.draft or {"side": "red" if series.games and series.games[-1]["won"] else "blue", "actions": []}
+    out = {"side": draft["side"], "special": draft.get("special"), "bans": {"user": [], "opponent": []},
            "picks": {"user": {}, "opponent": {}}, "turn": next_turn(draft)}
     for action in draft["actions"]:
         if action["type"] == "ban":
@@ -440,11 +499,14 @@ def _advance(series: TournamentSeries, rng=None, now=None) -> dict | None:
 
 def _play(series: TournamentSeries, rng=None, now=None) -> dict:
     state = draft_state(series)
-    result = evaluate_game(series, state["picks"]["user"], state["picks"]["opponent"])
+    special = (series.draft or {}).get("special")
+    result = evaluate_game(series, state["picks"]["user"], state["picks"]["opponent"], special)
     game = {
         **result,
         "number": len(series.games) + 1,
         "side": state["side"],
+        "special": special,
+        "actions": list((series.draft or {}).get("actions", [])),
         "user_picks": {r: state["picks"]["user"][r] for r in ROLES},
         "opponent_picks": {r: state["picks"]["opponent"][r] for r in ROLES},
         "bans": state["bans"],
@@ -461,6 +523,40 @@ def _play(series: TournamentSeries, rng=None, now=None) -> dict:
         series.draft = new_draft(series)
         _advance(series, rng, now)  # l'adversaire ouvre peut-être la draft suivante
     return game
+
+
+def auto_move(series: TournamentSeries, state: dict) -> dict:
+    """Le coup du mode automatique, volontairement simple : pick, le
+    champion libre le mieux noté pour un des joueurs du site encore sans
+    champion (sans regarder le face-à-face, la cohérence ni la particularité) ;
+    ban, le champion libre que l'adversaire a le plus joué pendant le tournoi."""
+    taken = state["taken"]
+    if state["turn"]["type"] == "pick":
+        best = None
+        open_roles = [r for r in ROLES if r not in state["picks"]["user"]]
+        cards = Card.objects.select_related("stats").in_bulk([int(series.lineup[r]) for r in open_roles])
+        for role in open_roles:
+            card = cards[int(series.lineup[role])]
+            top = (
+                CardChampion.objects.filter(card=card).exclude(champion_id__in=taken)
+                .order_by("-rating").values_list("champion_id", "rating").first()
+            )
+            if top and (best is None or top[1] > best[2]):
+                best = (role, top[0], top[1])
+        if best is None:
+            role = open_roles[0]
+            champion = next(cid for cid in sorted(champion_ids_by_name().values()) if cid not in taken)
+            return {"champion": champion, "role": role}
+        return {"champion": best[1], "role": best[0]}
+    counts: dict[int, int] = {}
+    for pool in prepare(series).get("pools", {}).values():
+        for cid, n in pool:
+            counts[cid] = counts.get(cid, 0) + n
+    ranked = sorted((cid for cid in counts if cid not in taken), key=lambda c: -counts[c])
+    champion = ranked[0] if ranked else next(
+        cid for cid in sorted(champion_ids_by_name().values()) if cid not in taken
+    )
+    return {"champion": champion, "role": None}
 
 
 def draft_action(user, series: TournamentSeries, champion_id, role: str | None = None, rng=None, now=None):
@@ -483,6 +579,9 @@ def draft_action(user, series: TournamentSeries, champion_id, role: str | None =
         turn = state["turn"]
         if turn is None or turn["team"] != "user":
             raise GameError("Ce n'est pas ton tour.")
+        if champion_id == "auto":
+            move = auto_move(series, state)
+            champion_id, role = move["champion"], move["role"]
         try:
             champion_id = int(champion_id or 0)
         except (TypeError, ValueError):
@@ -532,8 +631,10 @@ def _side(cards: dict[str, Card], champions: dict[str, Champion], rarities: dict
     return slots
 
 
-def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent_picks: dict[str, int]) -> dict:
-    """Les deux scores d'une partie, poste par poste, avec les face-à-face."""
+def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent_picks: dict[str, int],
+                  special: dict | None = None) -> dict:
+    """Les deux scores d'une partie, poste par poste, avec les face-à-face
+    et la particularité de la partie."""
     from .services import _duo_pairs
 
     all_ids = [int(c) for c in list(user_picks.values()) + list(opponent_picks.values())]
@@ -555,8 +656,9 @@ def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent
     for role in ROLES:
         face = matchup(role, user[role]["champion_name"], them[role]["champion_name"])
         points = matchup_points(face["rate"])
+        extra = special_points({"special": special}, role, user[role]["champion"])
         user[role].update(matchup=round(face["rate"] * 100), matchup_games=face["games"], bonus=points,
-                          score=round(user[role]["base"] + points, 1))
+                          special=extra, score=round(user[role]["base"] + points + extra, 1))
         them[role].update(matchup=100 - round(face["rate"] * 100), matchup_games=face["games"], bonus=-points,
                           score=round(them[role]["base"] - points, 1))
 

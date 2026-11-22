@@ -1,0 +1,10 @@
+{# Une carte en vignette (classement). Variable : p = {card, role, rarity, champion} #}
+<a class="thumb" href="{% url 'cards:card_detail' p.card.pk %}" style="--rarity: {{ p.rarity.color|default:'#5a6478' }}" title="{{ p.card.player.ign }} · {{ p.role }} · {{ p.rarity.name|default:'' }} · {{ p.card.split.name }}">
+  <span class="thumb-photo">
+    {% if p.card.image_url %}<img src="{{ p.card.image_url }}" alt="" loading="lazy">{% else %}<span class="nophoto">{{ p.card.player.ign|slice:":2" }}</span>{% endif %}
+    <span class="thumb-ovr">{{ p.card.overall }}</span>
+    {% if p.champion %}<img class="thumb-champ" src="{{ p.champion.icon_url }}" alt="{{ p.champion.name }}" loading="lazy">{% endif %}
+  </span>
+  <span class="thumb-name">{{ p.card.player.ign }}</span>
+  <span class="thumb-meta">{{ p.role }}{% if p.rarity.name %} · {{ p.rarity.name }}{% endif %}</span>
+</a>

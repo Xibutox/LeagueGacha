@@ -1063,7 +1063,8 @@ def leaderboard(limit: int = 100):
     rosters = (
         Roster.objects.filter(score__isnull=False)
         .select_related("user")
-        .prefetch_related("slots__card__player", "slots__picks__champion")
+        .prefetch_related("slots__card__player", "slots__card__image", "slots__card__split",
+                          "slots__picks__champion")
         .order_by("-score", "updated_at")
     )
     for roster in rosters:

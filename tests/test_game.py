@@ -1074,3 +1074,15 @@ def test_the_collection_is_paginated(client, split, bob, monkeypatch):
     assert len(first.context["rows"]) == 4 and first.context["page"].paginator.num_pages == 3
     assert "page=2" in first.content.decode() and "role=" in first.context["query"]
     assert len(client.get(reverse("cards:collection"), {"page": 3}).context["rows"]) == 2
+
+
+def test_the_ranking_shows_each_teams_cards(client, bob, full_team, owned):
+    give(bob, owned["Mid"], "legendaire")
+    save_roster(bob, "Ma team", full_team)
+    page = client.get(reverse("cards:ranking"))
+    lineup = page.context["rows"][0][1].lineup
+    assert [p["role"] for p in lineup] == list(ROLES)
+    assert next(p for p in lineup if p["role"] == "Mid")["rarity"].code == "legendaire"
+    html = page.content.decode()
+    assert html.count('class="thumb"') == 10  # podium + tableau
+    assert reverse("cards:card_detail", args=[owned["Mid"].pk]) in html

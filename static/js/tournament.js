@@ -13,6 +13,13 @@
   var fixed = JSON.parse(document.getElementById("bo5-static").textContent);
   var champions = {};
   var ui = { role: null, search: "", onlyPlayed: false, selected: null, busy: false, error: "" };
+  // L'animation : les coups arrivent tous d'un coup du serveur, la page les
+  // rejoue un par un (DELAY entre deux coups adverses, comme une vraie draft).
+  var DELAY = 5000, FAST = 1200;
+  var view = null;        // la draft affichée pendant une animation
+  var queue = [];         // les étapes restant à jouer
+  var auto = { on: false, timer: null };
+  try { auto.on = localStorage.getItem("lg-auto") === "1"; ui.fast = localStorage.getItem("lg-fast") === "1"; } catch (e) { /* stockage indisponible */ }
   index();
 
   function index() {
@@ -90,17 +97,18 @@
     })
       .then(function (r) { return r.json().then(function (data) { return { ok: r.ok, data: data }; }); })
       .then(function (res) {
-        if (res.data.state) state = res.data.state;
+        var before = state;
         if (res.data.static) { fixed = res.data.static; index(); }
         if (!res.ok) ui.error = res.data.error || "Coup refusé.";
         ui.selected = null;
-        if (res.data.played) {
-          ui.role = null;
-          ui.flash = res.data.played;
+        if (res.data.state) {
+          if (res.ok && before.status === "draft") {
+            try { replay(before, res.data.state, res.data.played); } catch (e) { queue = []; view = null; state = res.data.state; }
+          } else state = res.data.state;
         }
       })
       .catch(function () { ui.error = "Connexion perdue : réessaie."; })
-      .then(function () { ui.busy = false; render(); });
+      .then(function () { ui.busy = false; if (!queue.length) render(); });
   }
 
   // ---------------------------------------------------------------- rendu
@@ -179,16 +187,31 @@
     ]);
   }
 
-  function side(team, cards, label, color) {
-    var d = state.draft;
-    return h("section", { class: "draft-side " + color }, [
+  // Les bans et picks d'une draft, à partir de la liste de ses coups.
+  function board(d) {
+    var out = { bans: { user: [], opponent: [] }, picks: { user: {}, opponent: {} } };
+    (d.actions || []).forEach(function (a) {
+      if (a.type === "ban") out.bans[a.team].push(a.champion);
+      else out.picks[a.team][a.role] = a.champion;
+    });
+    return out;
+  }
+
+  function side(b, team, cards, label, color, last) {
+    var waiting = view && view.waiting && view.waiting.team === team;
+    return h("section", { class: "draft-side " + color + (waiting ? " is-thinking" : "") }, [
       h("h3", {}, [label + " ", h("small", { text: "côté " + (color === "blue" ? "bleu" : "rouge") })]),
-      h("div", { class: "draft-bans" }, d.bans[team].length
-        ? d.bans[team].map(function (id) { return h("span", { class: "ban", text: champ(id).name }); })
+      h("div", { class: "draft-bans" }, b.bans[team].length
+        ? b.bans[team].map(function (id) {
+          var fresh = last && last.type === "ban" && last.team === team && last.champion === id;
+          return h("span", { class: "ban" + (fresh ? " is-fresh" : "") }, [
+            champ(id).icon ? h("img", { src: champ(id).icon, alt: "", class: "champ-icon tiny" }) : null, champ(id).name]);
+        })
         : [h("span", { class: "muted small", text: "pas de ban" })]),
     ].concat(fixed.roles.map(function (role, i) {
-      var id = d.picks[team][role];
-      return h("div", { class: "draft-slot" + (id ? " is-filled" : "") }, [
+      var id = b.picks[team][role];
+      var fresh = last && last.type === "pick" && last.team === team && last.role === role;
+      return h("div", { class: "draft-slot" + (id ? " is-filled" : "") + (fresh ? " is-fresh" : "") }, [
         h("span", { class: "role role-" + role.toLowerCase(), text: role }),
         h("b", { text: cards[i] ? cards[i].ign : "" }),
         h("span", { class: "draft-champ" }, id
@@ -196,6 +219,21 @@
           : ["…"]),
       ]);
     })));
+  }
+
+  function specialPanel(special) {
+    if (!special) return null;
+    return h("div", { class: "special" }, [
+      h("p", {}, [h("b", { text: "Particularité de la partie : " }),
+        "la forme de " + special.player + " (" + special.role + ") en " + special.year + ". Ses champions préférés gagnent ou perdent des points selon leur bilan cette année-là."]),
+      h("div", { class: "special-list" }, special.effects.map(function (e) {
+        return h("span", { class: "special-effect " + (e.points > 0 ? "up" : (e.points < 0 ? "down" : "")) }, [
+          champ(e.champion).icon ? h("img", { src: champ(e.champion).icon, alt: "", class: "champ-icon tiny" }) : null,
+          e.name + " ", h("b", { text: (e.points > 0 ? "+" : "") + e.points }),
+          h("small", { class: "muted", text: " · " + e.rate + " % sur " + plural(e.games, "partie") }),
+        ]);
+      })),
+    ]);
   }
 
   function ratingFor(role, id) {
@@ -212,9 +250,37 @@
     return { total: total, text: list.map(function (x) { return x[0] + " ×" + x[1]; }).join(", ") };
   }
 
+  function autoPanel() {
+    return h("div", { class: "auto-mode" }, [
+      h("label", {}, [
+        h("input", { type: "checkbox", checked: auto.on, onchange: function () {
+          auto.on = this.checked;
+          try { localStorage.setItem("lg-auto", auto.on ? "1" : "0"); } catch (e) { /* rien */ }
+          render();
+        } }),
+        h("b", { text: " Mode auto" }),
+      ]),
+      h("p", { class: "small muted", text: "Il joue à ta place, simplement : pour un pick, le champion libre le mieux noté d'un de tes joueurs ; pour un ban, le champion que l'adversaire a le plus joué. Il ne regarde ni les face-à-face, ni la cohérence de la compo, ni la particularité de la partie : à toi de faire mieux !" }),
+      h("label", { class: "small" }, [
+        h("input", { type: "checkbox", checked: !!ui.fast, onchange: function () {
+          ui.fast = this.checked;
+          try { localStorage.setItem("lg-fast", ui.fast ? "1" : "0"); } catch (e) { /* rien */ }
+        } }),
+        " Animation rapide",
+      ]),
+    ]);
+  }
+
   function turnPanel() {
     var d = state.draft, turn = d.turn;
     if (!turn || turn.team !== "user") return h("p", { class: "muted", text: "L'adversaire réfléchit…" });
+    if (auto.on) {
+      return h("div", { class: "draft-turn is-auto" }, [
+        h("p", { class: "draft-step" }, ["Étape " + d.step + " sur " + d.steps + " : ",
+          h("b", { text: "le mode auto " + (turn.type === "ban" ? "bannit" : "choisit") + " pour toi…" })]),
+        h("div", { class: "timer", style: "--delay:" + delay() + "ms" }, [h("span")]),
+      ]);
+    }
     var isPick = turn.type === "pick";
     var free = fixed.champions.filter(function (c) { return d.taken.indexOf(c.id) < 0; });
     var openRoles = fixed.roles.filter(function (r) { return !d.picks.user[r]; });
@@ -236,6 +302,8 @@
 
     var grid = h("div", { class: "champ-grid", role: "listbox", "aria-label": "Champions" }, tiles.map(function (t) {
       var note = isPick ? String(t.info.rating) : (t.hint.total ? "×" + t.hint.total : "");
+      var sp = isPick && d.special && d.special.role === ui.role
+        ? d.special.effects.filter(function (e) { return e.champion === t.c.id; })[0] : null;
       var title = isPick ? (t.info.played ? plural(t.info.games, "partie") : "jamais joué") : (t.hint.text ? "Joué par " + t.hint.text : "");
       return h("button", {
         type: "button", role: "option", title: title || null,
@@ -247,6 +315,8 @@
         h("img", { src: t.c.icon, alt: "", loading: "lazy", width: "52", height: "52" }),
         h("span", { class: "ct-name", text: t.c.name }),
         note ? h("span", { class: "ct-note", text: note }) : null,
+        sp ? h("span", { class: "ct-special " + (sp.points >= 0 ? "up" : "down"), title: "Particularité de la partie",
+          text: (sp.points > 0 ? "+" : "") + sp.points }) : null,
       ]);
     }));
     if (!tiles.length) grid.appendChild(h("p", { class: "muted", text: "Aucun champion ne correspond." }));
@@ -290,18 +360,41 @@
   }
 
   function draft() {
-    var d = state.draft;
-    var user = d.side, them = d.side === "blue" ? "red" : "blue";
+    var replaying = !!view;
+    var d = replaying ? view.draft : state.draft;
+    var fearless = replaying ? view.fearless : state.fearless;
+    var b = board(d);
+    var them = d.side === "blue" ? "red" : "blue";
+    var waiting = replaying && view.waiting;
+    var number = state.games.length + (view && view.result ? 0 : 1);
+    var status = null;
+    if (replaying && view.result) {
+      var g = view.result;
+      status = h("div", { class: "draft-turn draft-over " + (g.won ? "won" : "lost") }, [
+        h("p", { class: "draft-step" }, [h("b", { text: "Partie " + g.number + " : " + (g.won ? "gagnée" : "perdue") }),
+          "  " + g.user_score + " – " + g.opponent_score]),
+      ]);
+    } else if (waiting) {
+      var who = waiting.team === "user" ? (auto.on ? "Le mode auto" : "Toi") : state.team;
+      status = h("div", { class: "draft-turn is-waiting" }, [
+        h("p", { class: "draft-step" }, [h("b", { text: who + (waiting.type === "ban" ? " bannit…" : " choisit…") })]),
+        waiting.team === "user" ? null : h("div", { class: "timer", style: "--delay:" + delay() + "ms" }, [h("span")]),
+      ]);
+    } else if (!replaying) {
+      status = turnPanel();
+    }
     return h("div", {}, [
-      h("div", { class: "strap", id: "draft" }, [h("h2", { text: "Partie " + (state.games.length + 1) + " : draft" })]),
-      h("p", { class: "muted", text: "Draft de tournoi à tour de rôle : 3 bans, 3 picks, puis 2 bans et 2 picks de chaque côté. Fearless : un champion joué dans ce Bo5 ne revient plus, pour personne. Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté et le bilan du champion face à celui d'en face." }),
-      state.fearless.length ? h("p", { class: "fearless" }, [h("b", { text: "Déjà joués : " })].concat(
-        state.fearless.map(function (id) { return h("span", { class: "banned", text: champ(id).name }); }))) : null,
+      h("div", { class: "strap", id: "draft" }, [h("h2", { text: "Partie " + number + " : draft" })]),
+      h("p", { class: "muted", text: "Draft de tournoi à tour de rôle : 3 bans, 3 picks, puis 2 bans et 2 picks de chaque côté. Fearless : un champion joué dans ce Bo5 ne revient plus, pour personne. Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté, le bilan du champion face à celui d'en face et la particularité de la partie." }),
+      specialPanel(d.special),
+      fearless.length ? h("p", { class: "fearless" }, [h("b", { text: "Déjà joués : " })].concat(
+        fearless.map(function (id) { return h("span", { class: "banned", text: champ(id).name }); }))) : null,
       h("div", { class: "draft-board" }, [
-        side("user", state.lineup, "Toi", user),
-        side("opponent", state.opponent, state.team, them),
+        side(b, "user", state.lineup, "Toi", d.side, replaying ? view.last : null),
+        side(b, "opponent", state.opponent, state.team, them, replaying ? view.last : null),
       ]),
-      turnPanel(),
+      status,
+      replaying ? null : autoPanel(),
     ]);
   }
 
@@ -319,7 +412,9 @@
             var mine = r.user, theirs = r.opponent;
             return h("tr", {}, [
               h("td", {}, [h("b", { text: mine.champion_name }), h("small", { class: "muted", text: mine.player + " · " + r.role })]),
-              h("td", { class: "num", text: String(mine.score) }),
+              h("td", { class: "num" }, [String(mine.score), mine.special ? h("small", {
+                class: mine.special > 0 ? "up" : "down", title: "Particularité de la partie",
+                text: (mine.special > 0 ? "+" : "") + mine.special + " forme" }) : null]),
               h("td", { class: "face" }, [
                 h("span", { class: mine.bonus > 0 ? "up" : (mine.bonus < 0 ? "down" : ""), text: mine.matchup + " %" }),
                 h("small", { class: "muted", text: mine.matchup_games ? plural(mine.matchup_games, "partie") : "jamais vu" }),
@@ -336,6 +431,81 @@
     })));
   }
 
+  // ------------------------------------------------------------ animation
+  function delay() { return ui.fast ? FAST : DELAY; }
+
+  function replay(before, after, played) {
+    var known = (before.draft && before.draft.actions || []).length;
+    var steps = [];
+    if (played) {
+      var game = after.games[0];
+      var base = { side: game.side, special: game.special, actions: game.actions.slice(0, known) };
+      var fearless = before.fearless;
+      game.actions.slice(known).forEach(function (a) { steps.push({ kind: "action", action: a, draft: base, fearless: fearless }); });
+      steps.push({ kind: "result", game: game });
+      if (after.draft) {
+        var nextDraft = { side: after.draft.side, special: after.draft.special, actions: [] };
+        steps.push({ kind: "new", draft: nextDraft, fearless: after.fearless });
+        after.draft.actions.forEach(function (a) { steps.push({ kind: "action", action: a, draft: nextDraft, fearless: after.fearless }); });
+      }
+    } else {
+      var draftNow = { side: after.draft.side, special: after.draft.special, actions: before.draft.actions.slice() };
+      after.draft.actions.slice(known).forEach(function (a) { steps.push({ kind: "action", action: a, draft: draftNow, fearless: after.fearless }); });
+    }
+    queue = steps;
+    var final = after;
+    view = null;
+    next();
+
+    function next() {
+      if (!queue.length) {
+        view = null;
+        state = final;
+        if (played) { ui.role = null; ui.flash = played; }
+        render();
+        return;
+      }
+      var step = queue.shift();
+      if (step.kind === "new") {
+        view = { draft: step.draft, fearless: step.fearless, waiting: null, last: null, result: null };
+        render();
+        return next();
+      }
+      if (step.kind === "result") {
+        view.result = step.game;
+        view.waiting = null;
+        render();
+        return setTimeout(next, ui.fast ? 1500 : 3500);
+      }
+      var a = step.action;
+      var mine = a.team === "user";
+      view = view && view.draft === step.draft ? view : { draft: step.draft, fearless: step.fearless, result: null };
+      view.waiting = { team: a.team, type: a.type };
+      view.last = null;
+      render();
+      setTimeout(function () {
+        step.draft.actions.push(a);
+        view.waiting = null;
+        view.last = a;
+        render();
+        setTimeout(next, mine ? 700 : 400);
+      }, mine ? 150 : delay());
+    }
+  }
+
+  // Le mode automatique : à ton tour, il joue après le même délai.
+  function scheduleAuto() {
+    clearTimeout(auto.timer);
+    auto.timer = null;
+    if (!auto.on || queue.length || ui.busy || state.status !== "draft" || !state.draft) return;
+    var turn = state.draft.turn;
+    if (!turn || turn.team !== "user") return;
+    auto.timer = setTimeout(function () {
+      auto.timer = null;
+      if (auto.on && !queue.length && !ui.busy) send({ type: turn.type, auto: true });
+    }, delay());
+  }
+
   function render() {
     var scroll = root.querySelector(".champ-grid");
     var top = scroll ? scroll.scrollTop : 0;
@@ -343,7 +513,7 @@
     if (ui.error) parts.push(h("p", { class: "flash flash-error", role: "alert", text: ui.error }));
     parts.push(result());
     if (state.status === "lineup") parts.push(lineup());
-    if (state.status === "draft" && state.draft) parts.push(draft());
+    if (view || (state.status === "draft" && state.draft)) parts.push(draft());
     parts.push(games());
     root.replaceChildren.apply(root, parts.filter(Boolean));
     var grid = root.querySelector(".champ-grid");
@@ -353,6 +523,7 @@
       ui.flash = null;
       if (played) played.scrollIntoView({ behavior: "smooth", block: "start" });
     }
+    if (!view) scheduleAuto();
   }
 
   function renderKeepFocus(name) {

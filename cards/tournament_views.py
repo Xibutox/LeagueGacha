@@ -112,7 +112,7 @@ def state_payload(series: TournamentSeries) -> dict:
                 "number": g["number"], "won": g["won"], "side": g.get("side"),
                 "user_score": g["user_score"], "opponent_score": g["opponent_score"],
                 "user_coherence": g["user_coherence"], "opponent_coherence": g["opponent_coherence"],
-                "bans": g.get("bans"),
+                "bans": g.get("bans"), "special": g.get("special"), "actions": g.get("actions", []),
                 "rows": [{"role": r, "user": g["user"][r], "opponent": g["opponent"][r]} for r in ROLES],
             }
             for g in reversed(series.games)
@@ -128,6 +128,7 @@ def state_payload(series: TournamentSeries) -> dict:
         state = game.draft_state(series)
         payload["draft"] = {
             "side": state["side"], "bans": state["bans"], "picks": state["picks"], "turn": state["turn"],
+            "special": state["special"], "actions": (series.draft or {}).get("actions", []),
             "taken": sorted(state["taken"]),
             "step": len((series.draft or {}).get("actions", [])) + 1, "steps": len(game.DRAFT_ORDER),
         }
@@ -211,7 +212,8 @@ def tournament_action(request, pk):
             state = game.draft_state(series)
             if state["turn"] and state["turn"]["type"] != kind:
                 raise GameError("Ce n'est pas le moment.")
-            played = game.draft_action(request.user, series, data.get("champion"), role=data.get("role"))
+            champion = "auto" if data.get("auto") else data.get("champion")
+            played = game.draft_action(request.user, series, champion, role=data.get("role"))
         else:
             return JsonResponse({"error": "Coup inconnu."}, status=400)
     except GameError as exc:
