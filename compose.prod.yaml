@@ -84,12 +84,14 @@ services:
 
   # Les pages : Gunicorn, plusieurs processus en parallèle (WEB_WORKERS,
   # 3 par défaut : de quoi servir plusieurs joueurs à la fois sur un Pi 4).
+  # --preload : le code et les gabarits sont chargés une fois, avant de
+  # lancer les processus (config/wsgi.py) ; aucun ne redémarre en route.
   web:
     <<: *app
     command: >-
       gunicorn config.wsgi:application --bind 0.0.0.0:8000
       --workers ${WEB_WORKERS:-3} --threads 2 --timeout 120
-      --forwarded-allow-ips "*" --max-requests 2000 --max-requests-jitter 200
+      --forwarded-allow-ips "*" --preload
     depends_on:
       migrate:
         condition: service_completed_successfully
