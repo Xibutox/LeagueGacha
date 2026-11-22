@@ -47,6 +47,23 @@ def free_picks(series):
     return dict(zip(ROLES, free))
 
 
+def my_move(player, series, rng):
+    """Un coup du joueur du site : le premier champion libre, au premier
+    poste libre. Renvoie la partie si elle s'est jouée."""
+    state = game.draft_state(series)
+    free = next(c for c in Champion.objects.order_by("name").values_list("pk", flat=True) if c not in state["taken"])
+    role = next((r for r in ROLES if r not in state["picks"]["user"]), None)
+    return game.draft_action(player, series, free, role=role if state["turn"]["type"] == "pick" else None, rng=rng)
+
+
+def play_one_game(player, series, rng):
+    while True:
+        played = my_move(player, series, rng)
+        series.refresh_from_db()
+        if played:
+            return played
+
+
 def test_the_automatic_tournament_replays_an_international_event(tourney, msi):
     assert tourney.auto and tourney.split == msi
     assert tourney.ends_at - tourney.starts_at == timedelta(days=7)
@@ -64,7 +81,7 @@ def test_opponent_cards_get_rarer_and_rewards_too(tourney):
     assert game.reward_rarity(2, 8).code == "commune" and game.reward_rarity(5, 8).code == "rare"
 
 
-def test_a_bo5_with_a_fearless_blind_draft(tourney, player):
+def test_a_bo5_with_a_turn_based_fearless_draft(tourney, player):
     series = game.start_series(player, tourney)
     assert series.status == TournamentSeries.Status.LINEUP and set(series.opponent) == set(ROLES)
     assert game.start_series(player, tourney) == series  # le Bo5 en cours
@@ -73,26 +90,34 @@ def test_a_bo5_with_a_fearless_blind_draft(tourney, player):
         game.set_lineup(player, series, {r: 999999 for r in ROLES})
     game.set_lineup(player, series, lineup_for(player))
     assert series.status == TournamentSeries.Status.DRAFT
+    state = game.draft_state(series)
+    assert state["side"] == "blue" and state["turn"] == {"team": "user", "type": "ban", "color": "blue", "index": 0}
 
     rng = random.Random(4)
-    first = game.play_game(player, series, free_picks(series), rng=rng)
+    my_move(player, series, rng)  # ban bleu, puis l'adversaire bannit
     series.refresh_from_db()
-    assert first["number"] == 1 and len(first["opponent"]) == 5
-    assert {"score", "matchup", "bonus"} <= set(first["user"]["Top"])
-    assert abs(first["user"]["Top"]["bonus"] + first["opponent"]["Top"]["bonus"]) < 1e-9
+    state = game.draft_state(series)
+    assert len(state["bans"]["user"]) == 1 and len(state["bans"]["opponent"]) == 1
+    with pytest.raises(GameError, match="banni ou pris"):
+        game.draft_action(player, series, state["bans"]["opponent"][0], rng=rng)
 
-    # Fearless : aucun champion de la partie 1 ne revient, pour personne.
-    reused = dict(free_picks(series), Top=first["opponent_picks"]["Top"])
-    with pytest.raises(GameError, match="Fearless"):
-        game.play_game(player, series, reused, rng=rng)
+    first = play_one_game(player, series, rng)
+    series.refresh_from_db()
+    assert first["number"] == 1 and len(first["bans"]["user"]) == len(first["bans"]["opponent"]) == 5
+    assert len(set(first["user_picks"].values()) | set(first["opponent_picks"].values())) == 10
+    assert abs(first["user"]["Top"]["bonus"] + first["opponent"]["Top"]["bonus"]) < 1e-9
+    # Le perdant de la partie prend le côté bleu.
+    assert game.draft_state(series)["side"] == ("red" if first["won"] else "blue")
+
+    # Fearless : un champion joué en partie 1 ne revient plus, pour personne.
+    if game.draft_state(series)["turn"]["team"] == "user":
+        with pytest.raises(GameError, match="Fearless"):
+            game.draft_action(player, series, first["opponent_picks"]["Top"], rng=rng)
 
     while not series.is_over:
-        game.play_game(player, series, free_picks(series), rng=rng)
-        series.refresh_from_db()
+        play_one_game(player, series, rng)
         played = [set(g["user_picks"].values()) | set(g["opponent_picks"].values()) for g in series.games]
-        # Aucun champion dans deux parties différentes (à l'aveugle, un miroir
-        # dans la même partie reste possible).
-        assert len(set().union(*played)) == sum(len(p) for p in played)
+        assert len(set().union(*played)) == 10 * len(series.games)
     assert 3 in (series.wins, series.losses) and len(series.games) <= 5
 
     run = series.run
@@ -100,13 +125,38 @@ def test_a_bo5_with_a_fearless_blind_draft(tourney, player):
     if series.status == TournamentSeries.Status.WON:
         assert run.step == 1 and series.reward_card_id in [int(c) for c in series.opponent.values()]
         assert UserCard.objects.filter(user=player, card=series.reward_card, rarity=series.reward_rarity).exists()
+        with pytest.raises(GameError, match="attendre"):  # 1 h avant l'adversaire suivant
+            game.start_series(player, tourney)
     else:
         assert run.step == 0 and series.reward_card is None
-    # Une heure d'attente avant le Bo5 suivant.
-    with pytest.raises(GameError, match="attendre"):
-        game.start_series(player, tourney)
-    later = series.finished_at + timedelta(hours=1, minutes=1)
-    assert game.run_status(run, later)["can_start"] or run.finished
+        assert game.run_status(run)["can_start"]  # le premier adversaire se retente tout de suite
+
+
+def test_the_wait_follows_every_bo5_except_a_first_defeat(tourney, player):
+    run = game.get_run(player, tourney)
+    now = timezone.now()
+    lost_first = TournamentSeries.objects.create(run=run, step=0, opponent={}, opponent_rarity=game.rarity_for_step(0, 2),
+                                                 status=TournamentSeries.Status.LOST, finished_at=now)
+    assert game.run_status(run, now)["can_start"]
+    lost_first.status = TournamentSeries.Status.WON
+    lost_first.save()
+    run.step = 1
+    run.save()
+    status = game.run_status(run, now)
+    assert not status["can_start"] and status["next_at"] == now + timedelta(hours=1)
+    TournamentSeries.objects.create(run=run, step=1, opponent={}, opponent_rarity=game.rarity_for_step(1, 2),
+                                    status=TournamentSeries.Status.LOST, finished_at=now + timedelta(minutes=5))
+    assert not game.run_status(run, now + timedelta(minutes=10))["can_start"]
+
+
+def test_only_the_player_whose_turn_it_is_acts(tourney, player):
+    series = game.start_series(player, tourney)
+    game.set_lineup(player, series, lineup_for(player))
+    rng = random.Random(1)
+    first = play_one_game(player, series, rng)
+    series.refresh_from_db()
+    if first["won"]:  # côté rouge : l'adversaire a déjà ouvert la draft
+        assert len(series.draft["actions"]) == 1 and series.draft["actions"][0]["team"] == "opponent"
 
 
 def test_the_higher_score_wins_and_matchups_count(tourney, player, monkeypatch):
@@ -119,7 +169,7 @@ def test_the_higher_score_wins_and_matchups_count(tourney, player, monkeypatch):
                             > (plain["opponent_score"], plain["opponent_coherence"]))
 
     monkeypatch.setattr(game, "matchup", lambda role, a, b: {"games": 50, "wins": 50, "rate": 0.9})
-    favoured = game.evaluate_game(series, picks, theirs)
+    favoured = game.evaluate_game(series, picks, theirs)  # noqa
     assert favoured["user"]["Mid"]["bonus"] == 16.0
     assert favoured["user_score"] > plain["user_score"] and favoured["opponent_score"] < plain["opponent_score"]
 
@@ -130,12 +180,14 @@ def test_the_matchup_comes_from_real_games(msi):
     assert game.matchup("Top", "Ahri", "Ahri")["rate"] == 0.5
 
 
-def test_the_opponent_drafts_what_its_players_played(tourney, player):
+def test_the_opponent_picks_what_its_players_played(tourney, player):
     series = game.start_series(player, tourney)
-    picks = game.opponent_draft(series, banned=set(), rng=random.Random(1))
+    game.set_lineup(player, series, lineup_for(player))
     played = set(Champion.objects.filter(name__in=["Ahri", "Azir", "Kai'Sa", "Wukong", "Lee Sin", "Nautilus", "Gnar"])
                  .values_list("pk", flat=True))
-    assert len(set(picks.values())) == 5 and set(picks.values()) <= played
+    state = game.draft_state(series)
+    move = game.opponent_action(series, state, "pick", rng=random.Random(1))
+    assert move["champion"] in played and move["role"] in ROLES
 
 
 def test_the_tournament_pages(client, tourney, player):
@@ -148,12 +200,26 @@ def test_the_tournament_pages(client, tourney, player):
     assert "Choisis tes 5 joueurs" in client.get(response["Location"]).content.decode()
 
     client.post(reverse("cards:tournament_lineup", args=[series.pk]), lineup_for(player))
-    assert "ta draft" in client.get(response["Location"]).content.decode()
-    series.refresh_from_db()
-    played = client.post(reverse("cards:tournament_draft", args=[series.pk]), free_picks(series))
-    assert "#partie-1" in played["Location"]
     html = client.get(response["Location"]).content.decode()
-    assert "Partie 1 :" in html and "Fearless, déjà joués" in html
+    assert "à toi de bannir" in html
+    series.refresh_from_db()
+    state = game.draft_state(series)
+    free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
+    banned = client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": free})
+    assert banned["Location"].endswith("#draft")
+    for _ in range(4):  # 3 bans chacun, puis le premier pick
+        series.refresh_from_db()
+        state = game.draft_state(series)
+        if state["turn"]["type"] == "pick":
+            break
+        free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
+        client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": free})
+    html = client.get(response["Location"]).content.decode()
+    assert "à toi de choisir" in html and "<optgroup" in html
+    free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
+    client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": f"Top|{free}"})
+    series.refresh_from_db()
+    assert game.draft_state(series)["picks"]["user"]["Top"] == free
     assert "Reprendre ton Bo5" in client.get(reverse("cards:tournament")).content.decode()
 
 

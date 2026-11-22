@@ -53,28 +53,60 @@
   </form>
 {% endif %}
 
-{% if draft %}
-  <div class="strap"><h2>Partie {{ series.games|length|add:1 }} : ta draft</h2></div>
-  <p class="muted">Choisis un champion par joueur. L'adversaire choisit en même temps, sans voir les tiens, en puisant dans ce que ses joueurs ont joué pendant ce tournoi.
+{% if board %}
+  <div class="strap" id="draft"><h2>Partie {{ series.games|length|add:1 }} : draft</h2></div>
+  <p class="muted">Draft de tournoi à tour de rôle : 3 bans, 3 picks, puis 2 bans et 2 picks de chaque côté. Fearless : un champion joué dans ce Bo5 ne revient plus, pour personne.
     Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté et le bilan du champion face à celui d'en face.</p>
   {% if banned %}
-    <p class="fearless"><b>Fearless, déjà joués :</b> {% for c in banned %}<span class="banned">{{ c.name }}</span>{% endfor %}</p>
+    <p class="fearless"><b>Déjà joués :</b> {% for c in banned %}<span class="banned">{{ c.name }}</span>{% endfor %}</p>
   {% endif %}
-  <form method="post" action="{% url 'cards:tournament_draft' series.pk %}" class="draft-form">{% csrf_token %}
-    {% for row in draft %}
-      <div class="draft-row">
-        <span class="role role-{{ row.role|lower }}">{{ row.role }}</span>
-        <span class="draft-player"><b>{{ row.card.player.ign }}</b><small class="muted">note {{ row.card.overall }}</small></span>
-        <select name="{{ row.role }}" required aria-label="Champion de {{ row.card.player.ign }}">
-          <option value="">— champion —</option>
-          {% for o in row.options %}<option value="{{ o.id }}">{{ o.name }} · {{ o.rating }}{% if o.played %} · {{ o.games }} partie{{ o.games|pluralize }}{% else %} · jamais joué{% endif %}</option>{% endfor %}
+  <div class="draft-board">
+    <section class="draft-side {{ board.user_color }}">
+      <h3>Toi <small>côté {% if board.user_color == "blue" %}bleu{% else %}rouge{% endif %}</small></h3>
+      <div class="draft-bans">{% for c in board.user.bans %}<span class="ban">{{ c.name }}</span>{% empty %}<span class="muted small">pas de ban</span>{% endfor %}</div>
+      {% for slot in board.user.slots %}
+        <div class="draft-slot{% if slot.champion %} is-filled{% endif %}">
+          <span class="role role-{{ slot.role|lower }}">{{ slot.role }}</span>
+          <b>{{ slot.card.player.ign }}</b>
+          <span class="draft-champ">{% if slot.champion %}<img src="{{ slot.champion.icon_url }}" alt="" class="champ-icon small">{{ slot.champion.name }}{% else %}…{% endif %}</span>
+        </div>
+      {% endfor %}
+    </section>
+    <section class="draft-side {% if board.user_color == 'blue' %}red{% else %}blue{% endif %}">
+      <h3>{{ series.team.name }} <small>côté {% if board.user_color == "blue" %}rouge{% else %}bleu{% endif %}</small></h3>
+      <div class="draft-bans">{% for c in board.opponent.bans %}<span class="ban">{{ c.name }}</span>{% empty %}<span class="muted small">pas de ban</span>{% endfor %}</div>
+      {% for slot in board.opponent.slots %}
+        <div class="draft-slot{% if slot.champion %} is-filled{% endif %}">
+          <span class="role role-{{ slot.role|lower }}">{{ slot.role }}</span>
+          <b>{{ slot.card.player.ign }}</b>
+          <span class="draft-champ">{% if slot.champion %}<img src="{{ slot.champion.icon_url }}" alt="" class="champ-icon small">{{ slot.champion.name }}{% else %}…{% endif %}</span>
+        </div>
+      {% endfor %}
+    </section>
+  </div>
+
+  {% if board.turn and board.turn.team == "user" %}
+    <form method="post" action="{% url 'cards:tournament_draft' series.pk %}" class="draft-turn">{% csrf_token %}
+      <p class="draft-step">Étape {{ board.step }} sur {{ board.steps }} : <b>{% if board.turn.type == "ban" %}à toi de bannir un champion{% else %}à toi de choisir un champion pour un de tes joueurs{% endif %}</b></p>
+      {% if board.turn.type == "ban" %}
+        <select name="choice" required aria-label="Champion à bannir">
+          <option value="">— champion à bannir —</option>
+          {% for o in board.ban_options %}<option value="{{ o.id }}">{{ o.name }}{% if o.played %} · joué par {{ o.played }}{% endif %}</option>{% endfor %}
         </select>
-        <span class="draft-vs">contre</span>
-        <span class="draft-player them"><b>{{ row.opponent.player.ign }}</b><small class="muted">note {{ row.opponent.overall }} · champion caché</small></span>
-      </div>
-    {% endfor %}
-    <button class="btn btn-gold btn-big" type="submit">Lancer la partie</button>
-  </form>
+        <button class="btn btn-gold" type="submit">Bannir</button>
+      {% else %}
+        <select name="choice" required aria-label="Champion et joueur">
+          <option value="">— champion —</option>
+          {% for g in board.pick_groups %}
+            <optgroup label="{{ g.role }} · {{ g.card.player.ign }}">
+              {% for o in g.options %}<option value="{{ o.value }}">{{ o.name }} · {{ o.rating }}{% if o.played %} · {{ o.games }} partie{{ o.games|pluralize }}{% else %} · jamais joué{% endif %}</option>{% endfor %}
+            </optgroup>
+          {% endfor %}
+        </select>
+        <button class="btn btn-gold" type="submit">Choisir</button>
+      {% endif %}
+    </form>
+  {% endif %}
 {% endif %}
 
 {% if games %}

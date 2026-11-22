@@ -4,9 +4,9 @@ Le joueur du site affronte les équipes du tournoi de la moins bien classée
 à la gagnante, en Bo5 (3 victoires). Pour chaque Bo5 :
 
 1. il aligne 5 joueurs de sa collection face aux 5 joueurs adverses ;
-2. à chaque partie, les deux camps choisissent leurs 5 champions à
-   l'aveugle, en Fearless : un champion joué dans le Bo5 ne revient plus,
-   pour personne ;
+2. à chaque partie, une draft de tournoi à tour de rôle (3 bans, 3 picks,
+   2 bans, 2 picks de chaque côté), en Fearless : un champion joué dans le
+   Bo5 ne revient plus, pour personne ;
 3. la partie se joue au score : celui des équipes (note du joueur, note
    sur le champion, bonus de rareté, cohérence), corrigé à chaque poste par
    le face-à-face des deux champions (leur bilan en compétition). Le
@@ -195,7 +195,10 @@ def run_status(run: TournamentRun, now=None) -> dict:
     current = run.series.exclude(status__in=[TournamentSeries.Status.WON, TournamentSeries.Status.LOST]).first()
     last = run.series.filter(finished_at__isnull=False).order_by("-finished_at").first()
     next_at = None
-    if last:
+    # L'attente suit chaque Bo5, gagné ou perdu, sauf une défaite contre le
+    # premier adversaire : on le retente tout de suite.
+    first_try = last is not None and last.step == 0 and last.status == TournamentSeries.Status.LOST
+    if last and not first_try:
         next_at = last.finished_at + timedelta(hours=float(run.tournament.cooldown_hours))
         if next_at <= now:
             next_at = None
@@ -260,7 +263,9 @@ def set_lineup(user, series: TournamentSeries, picks: dict) -> TournamentSeries:
     series.lineup = card_ids
     series.lineup_rarities = {role: owned[cid].pk for role, cid in card_ids.items()}
     series.status = TournamentSeries.Status.DRAFT
-    series.save(update_fields=["lineup", "lineup_rarities", "status"])
+    series.draft = new_draft(series)
+    _advance(series)  # côté rouge : l'adversaire commence
+    series.save()
     return series
 
 
@@ -287,36 +292,189 @@ def matchup_points(rate: float) -> float:
     return round((rate - 0.5) * MATCHUP_WEIGHT, 1)
 
 
-def opponent_draft(series: TournamentSeries, banned: set[int], rng=None) -> dict[str, int]:
-    """Les champions de l'adversaire virtuel : pour chaque joueur, un tirage
-    pondéré parmi ce qu'il a joué pendant ce tournoi (plus il l'a joué,
-    plus il a de chances de le reprendre), sinon dans son historique, sinon
-    au hasard ; jamais un champion déjà joué du Bo5 (Fearless)."""
-    rng = rng or random
-    cards = Card.objects.in_bulk([int(c) for c in series.opponent.values()])
-    by_name = {c.name: c.pk for c in Champion.objects.all()}
-    taken = set(banned)
-    picks = {}
-    for role in ROLES:
-        card = cards[int(series.opponent[role])]
-        played = (
-            GameAppearance.objects.filter(tournament__split=card.split_id, player=card.player_id)
+#: L'ordre d'une draft de tournoi : (côté, action). 3 bans chacun, 3 picks
+#: chacun, 2 bans chacun, 2 picks chacun.
+DRAFT_ORDER = [
+    ("blue", "ban"), ("red", "ban"), ("blue", "ban"), ("red", "ban"), ("blue", "ban"), ("red", "ban"),
+    ("blue", "pick"), ("red", "pick"), ("red", "pick"), ("blue", "pick"), ("blue", "pick"), ("red", "pick"),
+    ("red", "ban"), ("blue", "ban"), ("red", "ban"), ("blue", "ban"),
+    ("red", "pick"), ("blue", "pick"), ("blue", "pick"), ("red", "pick"),
+]
+
+
+def new_draft(series: TournamentSeries) -> dict:
+    """La draft d'une nouvelle partie. Partie 1 : le joueur du site est côté
+    bleu ; ensuite, le perdant de la partie précédente prend le côté bleu."""
+    side = "blue"
+    if series.games:
+        side = "red" if series.games[-1]["won"] else "blue"
+    return {"side": side, "actions": []}
+
+
+def _team_of(draft: dict, color: str) -> str:
+    return "user" if color == draft["side"] else "opponent"
+
+
+def next_turn(draft: dict) -> dict | None:
+    """{"team": "user"|"opponent", "type": "ban"|"pick", "color", "index"} ou None."""
+    index = len(draft["actions"])
+    if index >= len(DRAFT_ORDER):
+        return None
+    color, kind = DRAFT_ORDER[index]
+    return {"team": _team_of(draft, color), "type": kind, "color": color, "index": index}
+
+
+def draft_state(series: TournamentSeries) -> dict:
+    """Ce que la draft en cours a déjà fixé."""
+    draft = series.draft or new_draft(series)
+    out = {"side": draft["side"], "bans": {"user": [], "opponent": []},
+           "picks": {"user": {}, "opponent": {}}, "turn": next_turn(draft)}
+    for action in draft["actions"]:
+        if action["type"] == "ban":
+            out["bans"][action["team"]].append(action["champion"])
+        else:
+            out["picks"][action["team"]][action["role"]] = action["champion"]
+    out["taken"] = (
+        series.used_champions()
+        | set(out["bans"]["user"]) | set(out["bans"]["opponent"])
+        | set(out["picks"]["user"].values()) | set(out["picks"]["opponent"].values())
+    )
+    return out
+
+
+def _opponent_pool(series: TournamentSeries, card: Card, taken: set[int], by_name: dict) -> list[tuple[int, int]]:
+    """Ce que ce joueur adverse peut prendre : ses champions du tournoi,
+    pondérés par le nombre de parties ; sinon son historique."""
+    played = (
+        GameAppearance.objects.filter(tournament__split=card.split_id, player=card.player_id)
+        .values("champion").annotate(n=Count("id"))
+    )
+    pool = [(by_name.get(r["champion"]), r["n"]) for r in played]
+    pool = [(cid, n) for cid, n in pool if cid and cid not in taken]
+    if not pool:
+        history = (
+            CardChampion.objects.filter(card__player=card.player_id)
             .values("champion").annotate(n=Count("id"))
         )
-        pool = [(by_name.get(r["champion"]), r["n"]) for r in played]
-        pool = [(cid, n) for cid, n in pool if cid and cid not in taken]
-        if not pool:
-            history = CardChampion.objects.filter(card__player=card.player_id).values("champion").annotate(
-                n=Count("id")
-            )
-            pool = [(r["champion"], r["n"]) for r in history if r["champion"] not in taken]
-        if pool:
-            choice = rng.choices([cid for cid, _ in pool], weights=[n for _, n in pool])[0]
+        pool = [(r["champion"], r["n"]) for r in history if r["champion"] not in taken]
+    return pool
+
+
+def opponent_action(series: TournamentSeries, state: dict, kind: str, rng=None) -> dict:
+    """Le coup de l'adversaire virtuel.
+
+    Pick : un de ses postes encore libres et un champion tiré parmi ce que
+    ce joueur a joué pendant le tournoi (plus il l'a joué, plus il a de
+    chances de le reprendre). Ban : un des meilleurs champions des joueurs
+    du site encore sans champion."""
+    rng = rng or random
+    taken = state["taken"]
+    by_name = {c.name: c.pk for c in Champion.objects.all()}
+    if kind == "pick":
+        cards = Card.objects.in_bulk([int(c) for c in series.opponent.values()])
+        options = []
+        for role in ROLES:
+            if role in state["picks"]["opponent"]:
+                continue
+            card = cards[int(series.opponent[role])]
+            options += [(role, cid, n) for cid, n in _opponent_pool(series, card, taken, by_name)]
+        if options:
+            role, champion, _ = rng.choices(options, weights=[n for *_, n in options])[0]
         else:
-            choice = rng.choice([cid for cid in by_name.values() if cid not in taken])
-        picks[role] = choice
-        taken.add(choice)
-    return picks
+            role = next(r for r in ROLES if r not in state["picks"]["opponent"])
+            champion = rng.choice([cid for cid in by_name.values() if cid not in taken])
+        return {"team": "opponent", "type": "pick", "champion": champion, "role": role}
+
+    open_roles = [r for r in ROLES if r not in state["picks"]["user"]] or ROLES
+    targets = (
+        CardChampion.objects.filter(card_id__in=[int(series.lineup[r]) for r in open_roles], games__gt=0)
+        .exclude(champion_id__in=taken).order_by("-rating").values_list("champion_id", flat=True)[:3]
+    )
+    targets = list(targets) or [cid for cid in by_name.values() if cid not in taken]
+    return {"team": "opponent", "type": "ban", "champion": rng.choice(targets), "role": None}
+
+
+def _advance(series: TournamentSeries, rng=None, now=None) -> dict | None:
+    """Joue les coups de l'adversaire jusqu'au tour du joueur du site, puis,
+    si la draft est complète, joue la partie. Renvoie la partie jouée."""
+    draft = series.draft or new_draft(series)
+    series.draft = draft
+    while True:
+        turn = next_turn(draft)
+        if turn is None:
+            return _play(series, rng, now)
+        if turn["team"] == "user":
+            return None
+        state = draft_state(series)
+        draft["actions"].append(opponent_action(series, state, turn["type"], rng))
+
+
+def _play(series: TournamentSeries, rng=None, now=None) -> dict:
+    state = draft_state(series)
+    result = evaluate_game(series, state["picks"]["user"], state["picks"]["opponent"])
+    game = {
+        **result,
+        "number": len(series.games) + 1,
+        "side": state["side"],
+        "user_picks": {r: state["picks"]["user"][r] for r in ROLES},
+        "opponent_picks": {r: state["picks"]["opponent"][r] for r in ROLES},
+        "bans": state["bans"],
+    }
+    series.games = [*series.games, game]
+    if result["won"]:
+        series.wins += 1
+    else:
+        series.losses += 1
+    series.draft = {}
+    if series.wins >= TournamentSeries.WINS_NEEDED or series.losses >= TournamentSeries.WINS_NEEDED:
+        _finish(series, rng, now)
+    else:
+        series.draft = new_draft(series)
+        _advance(series, rng, now)  # l'adversaire ouvre peut-être la draft suivante
+    return game
+
+
+def draft_action(user, series: TournamentSeries, champion_id, role: str | None = None, rng=None, now=None):
+    """Le coup du joueur du site (ban, ou pick pour un de ses postes), puis
+    ceux de l'adversaire jusqu'à son prochain tour. Renvoie la partie si la
+    draft s'est terminée, sinon None."""
+    if series.run.user_id != user.pk:
+        raise GameError("Ce Bo5 n'est pas le tien.")
+    if not is_open(series.run.tournament, now):
+        raise GameError("Ce tournoi est fermé.")
+    with transaction.atomic():
+        series = TournamentSeries.objects.select_for_update().select_related("run__tournament", "opponent_rarity").get(
+            pk=series.pk
+        )
+        if series.status != TournamentSeries.Status.DRAFT:
+            raise GameError("Ce Bo5 n'attend pas de draft.")
+        if not series.draft:
+            series.draft = new_draft(series)
+        state = draft_state(series)
+        turn = state["turn"]
+        if turn is None or turn["team"] != "user":
+            raise GameError("Ce n'est pas ton tour.")
+        try:
+            champion_id = int(champion_id or 0)
+        except (TypeError, ValueError):
+            champion_id = 0
+        champion = Champion.objects.filter(pk=champion_id).first()
+        if champion is None:
+            raise GameError("Choisis un champion.")
+        if champion_id in series.used_champions():
+            raise GameError(f"Fearless : {champion.name} a déjà été joué dans ce Bo5.")
+        if champion_id in state["taken"]:
+            raise GameError(f"{champion.name} est déjà banni ou pris dans cette partie.")
+        action = {"team": "user", "type": turn["type"], "champion": champion_id, "role": None}
+        if turn["type"] == "pick":
+            if role not in ROLES or role in state["picks"]["user"]:
+                raise GameError("Choisis lequel de tes joueurs prend ce champion.")
+            action["role"] = role
+        series.draft["actions"].append(action)
+        before = len(series.games)
+        _advance(series, rng, now)
+        series.save()
+    return series.games[before] if len(series.games) > before else None
 
 
 def _side(cards: dict[str, Card], champions: dict[str, Champion], rarities: dict[str, Rarity]) -> dict:
@@ -389,56 +547,6 @@ def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent
         "user_coherence": user_coherence, "opponent_coherence": their_coherence,
         "won": won,
     }
-
-
-def play_game(user, series: TournamentSeries, picks: dict, rng=None, now=None) -> dict:
-    """Le joueur du site valide ses 5 champions ; l'adversaire choisit les
-    siens à l'aveugle, puis la partie se joue. Renvoie la partie jouée."""
-    if series.run.user_id != user.pk:
-        raise GameError("Ce Bo5 n'est pas le tien.")
-    if not is_open(series.run.tournament, now):
-        raise GameError("Ce tournoi est fermé.")
-    with transaction.atomic():
-        series = TournamentSeries.objects.select_for_update().select_related("run__tournament", "opponent_rarity").get(
-            pk=series.pk
-        )
-        if series.status != TournamentSeries.Status.DRAFT:
-            raise GameError("Ce Bo5 n'attend pas de draft.")
-        banned = series.used_champions()
-        chosen = {}
-        for role in ROLES:
-            try:
-                chosen[role] = int(picks.get(role) or 0)
-            except (TypeError, ValueError):
-                chosen[role] = 0
-        if not all(chosen.values()):
-            raise GameError("Choisis un champion pour chacun de tes joueurs.")
-        if len(set(chosen.values())) != len(ROLES):
-            raise GameError("Un champion ne sert qu'une fois par partie.")
-        known = Champion.objects.in_bulk(list(chosen.values()))
-        if len(known) != len(ROLES):
-            raise GameError("Champion inconnu.")
-        if banned & set(chosen.values()):
-            names = ", ".join(known[c].name for c in banned & set(chosen.values()))
-            raise GameError(f"Fearless : {names} a déjà été joué dans ce Bo5.")
-
-        theirs = opponent_draft(series, banned, rng)
-        result = evaluate_game(series, chosen, theirs)
-        game = {
-            **result,
-            "number": len(series.games) + 1,
-            "user_picks": {r: chosen[r] for r in ROLES},
-            "opponent_picks": {r: theirs[r] for r in ROLES},
-        }
-        series.games = [*series.games, game]
-        if result["won"]:
-            series.wins += 1
-        else:
-            series.losses += 1
-        if series.wins >= TournamentSeries.WINS_NEEDED or series.losses >= TournamentSeries.WINS_NEEDED:
-            _finish(series, rng, now)
-        series.save()
-    return game
 
 
 def _finish(series: TournamentSeries, rng=None, now=None) -> None:

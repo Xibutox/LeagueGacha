@@ -567,3 +567,25 @@ a.gift { color: inherit; text-decoration: none; }
   .game-table th:nth-child(3), .game-table td:nth-child(3) { display: none; }
   .game-table { font-size: .8rem; }
 }
+
+/* La draft à tour de rôle. */
+.draft-board { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin: 12px 0 18px; }
+.draft-side { padding: 12px 14px; background: var(--rift); border-top: 3px solid #3b82f6; }
+.draft-side.red { border-top-color: #e0605a; }
+.draft-side h3 { margin: 0 0 8px; font-size: 1.05rem; }
+.draft-side h3 small { font-weight: 400; color: var(--muted, #8a96ad); font-size: .78rem; }
+.draft-bans { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 10px; min-height: 22px; }
+.draft-bans .ban { padding: 2px 7px; font-size: .75rem; background: rgba(255,255,255,.06); text-decoration: line-through; color: var(--muted, #8a96ad); }
+.draft-slot { display: grid; grid-template-columns: 70px 1fr auto; gap: 10px; align-items: center; padding: 6px 0;
+  border-top: 1px solid rgba(255,255,255,.05); font-size: .9rem; }
+.draft-champ { display: inline-flex; align-items: center; gap: 6px; color: var(--muted, #8a96ad); }
+.draft-slot.is-filled .draft-champ { color: var(--text, #e8edf6); font-weight: 600; }
+.draft-turn { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 14px; background: var(--rift);
+  border-left: 4px solid var(--gold, #e2b35a); margin-bottom: 26px; }
+.draft-turn .draft-step { flex-basis: 100%; margin: 0; }
+.draft-turn select { flex: 1; min-width: 220px; }
+@media (max-width: 640px) {
+  .draft-board { grid-template-columns: 1fr; }
+  .draft-slot { grid-template-columns: 62px 1fr; }
+  .draft-champ { grid-column: 2; }
+}

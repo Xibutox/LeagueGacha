@@ -708,6 +708,8 @@ class TournamentSeries(models.Model):
     lineup = models.JSONField("joueurs alignés", default=dict, blank=True, help_text="{poste: id de carte}")
     lineup_rarities = models.JSONField("raretés alignées", default=dict, blank=True)
     games = models.JSONField("parties", default=list, blank=True)
+    draft = models.JSONField("draft en cours", default=dict, blank=True,
+                             help_text='{"side": "blue"|"red", "actions": [{team, type, champion, role}]}')
     wins = models.PositiveSmallIntegerField("victoires", default=0)
     losses = models.PositiveSmallIntegerField("défaites", default=0)
     reward_card = models.ForeignKey(Card, verbose_name="carte gagnée", on_delete=models.SET_NULL, null=True,

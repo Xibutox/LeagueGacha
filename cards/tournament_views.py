@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import Count
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
@@ -71,7 +72,7 @@ def tournament_series(request, pk):
     if series.status == TournamentSeries.Status.LINEUP:
         context["choices"] = _lineup_choices(request.user)
     elif series.status == TournamentSeries.Status.DRAFT:
-        context["draft"] = _draft_choices(series)
+        context["board"] = _draft_board(series)
     context["lineup_rarities"] = Rarity.objects.in_bulk([int(r) for r in series.lineup_rarities.values()])
     context["games"] = list(reversed(series.games))
     context["run_status"] = game.run_status(series.run)
@@ -89,32 +90,67 @@ def _lineup_choices(user) -> list[tuple[str, list]]:
     return [(r, by_role[r]) for r in ROLES]
 
 
-def _draft_choices(series: TournamentSeries) -> list[dict]:
-    """Pour chaque poste : le joueur aligné, l'adversaire, et les champions
-    encore libres (Fearless), ses champions joués d'abord."""
-    banned = series.used_champions()
-    champions = [c for c in Champion.objects.order_by("name") if c.pk not in banned]
+def _draft_board(series: TournamentSeries) -> dict:
+    """La draft en cours : bans et picks des deux côtés, et le tour du
+    joueur du site avec ses choix possibles."""
+    from esport.models import GameAppearance
+
+    state = game.draft_state(series)
     view = game.series_view(series)
     mine, theirs = dict(view["lineup"]), dict(view["opponent"])
-    ratings: dict[int, dict[int, CardChampion]] = {}
-    for a in CardChampion.objects.filter(card_id__in=[c.pk for c in mine.values() if c]):
-        ratings.setdefault(a.card_id, {})[a.champion_id] = a
-    rows = []
-    for role in ROLES:
-        card = mine[role]
-        player_rating = card.stats.score if card.stats else 50.0
-        played = ratings.get(card.pk, {})
-        options = []
-        for c in champions:
-            a = played.get(c.pk)
-            options.append({
-                "id": c.pk, "name": c.name, "played": a is not None,
-                "rating": round(a.rating if a else game.unplayed_rating(player_rating)),
-                "games": (a.games + a.history_games) if a else 0,
-            })
-        options.sort(key=lambda o: (not o["played"], -o["rating"], o["name"]))
-        rows.append({"role": role, "card": card, "opponent": theirs[role], "options": options})
-    return rows
+    all_champions = list(Champion.objects.order_by("name"))
+    by_id = {c.pk: c for c in all_champions}
+    free = [c for c in all_champions if c.pk not in state["taken"]]
+
+    def side(team, cards):
+        return {
+            "bans": [by_id.get(c) for c in state["bans"][team]],
+            "slots": [{"role": r, "card": cards[r], "champion": by_id.get(state["picks"][team].get(r))} for r in ROLES],
+        }
+
+    board = {
+        "user_color": state["side"],
+        "user": side("user", mine),
+        "opponent": side("opponent", theirs),
+        "turn": state["turn"],
+        "step": len((series.draft or {}).get("actions", [])) + 1,
+        "steps": len(game.DRAFT_ORDER),
+    }
+    turn = state["turn"]
+    if turn and turn["team"] == "user" and turn["type"] == "ban":
+        # Pour bannir : ce que les joueurs d'en face ont joué pendant le tournoi.
+        pools: dict[str, list[str]] = {}
+        rows = (
+            GameAppearance.objects.filter(tournament__split=series.run.tournament.split_id,
+                                          player__in=[c.player_id for c in theirs.values()])
+            .values("champion", "player__ign").annotate(n=Count("id")).order_by("-n")
+        )
+        for r in rows:
+            pools.setdefault(r["champion"], []).append(f"{r['player__ign']} ×{r['n']}")
+        board["ban_options"] = sorted(
+            ({"id": c.pk, "name": c.name, "played": ", ".join(pools.get(c.name, []))} for c in free),
+            key=lambda o: (not o["played"], o["name"]),
+        )
+    elif turn and turn["team"] == "user":
+        groups = []
+        for role in ROLES:
+            if role in state["picks"]["user"]:
+                continue
+            card = mine[role]
+            player_rating = card.stats.score if card.stats else 50.0
+            played = {a.champion_id: a for a in CardChampion.objects.filter(card=card)}
+            options = []
+            for c in free:
+                a = played.get(c.pk)
+                options.append({
+                    "value": f"{role}|{c.pk}", "name": c.name, "played": a is not None,
+                    "rating": round(a.rating if a else game.unplayed_rating(player_rating)),
+                    "games": (a.games + a.history_games) if a else 0,
+                })
+            options.sort(key=lambda o: (not o["played"], -o["rating"], o["name"]))
+            groups.append({"role": role, "card": card, "options": options})
+        board["pick_groups"] = groups
+    return board
 
 
 @login_required
@@ -132,9 +168,12 @@ def tournament_lineup(request, pk):
 @require_POST
 def tournament_draft(request, pk):
     series = _series(request, pk)
+    choice = request.POST.get("choice", "")
+    role, _, champion = choice.partition("|") if "|" in choice else (None, "", choice)
     try:
-        played = game.play_game(request.user, series, {r: request.POST.get(r) for r in ROLES})
+        played = game.draft_action(request.user, series, champion, role=role)
     except GameError as exc:
         messages.error(request, str(exc))
         return redirect("cards:tournament_series", pk=series.pk)
-    return redirect(reverse("cards:tournament_series", args=[series.pk]) + f"#partie-{played['number']}")
+    url = reverse("cards:tournament_series", args=[series.pk])
+    return redirect(url + (f"#partie-{played['number']}" if played else "#draft"))
