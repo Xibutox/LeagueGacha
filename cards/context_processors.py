@@ -23,5 +23,11 @@ def game(request):
         portals = sum(portal_status(user, p)["available"] for p in open_portals())
         return sum(s["available"] for s in status.values()) + portals
 
+    def duels():
+        from .duel import waiting_count
+
+        return waiting_count(user)
+
     context["packs_ready"] = ready
+    context["duels_waiting"] = duels
     return context

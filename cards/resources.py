@@ -27,6 +27,7 @@ from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     ExchangeOffer,
     QuizAttempt,
+    Duel,
     FailleAchievement,
     FailleRun,
     Supporter,
@@ -882,6 +883,28 @@ class FailleAchievementResource(ModelResource):
     list_select_related = ("user",)
     search_fields = ("user__username", "code")
     ordering = ("-unlocked_at",)
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(Duel)
+class DuelResource(ModelResource):
+    icon = "sports_kabaddi"
+    group = PLAYERS
+    order = 11
+    label_plural = _("duels 1V1")
+    description = _("Les Bo5 entre joueurs du site : invitations, duels en cours et terminés.")
+    history = False
+
+    list_display = ("created_at", "challenger", "opponent", "status", "wins_a", "wins_b", "winner")
+    list_filter = ("status",)
+    list_select_related = ("challenger", "opponent", "winner")
+    search_fields = ("challenger__username", "opponent__username")
+    ordering = ("-created_at",)
+    readonly_fields = ("challenger", "opponent", "meta", "lineup_a", "lineup_b", "rarities_a", "rarities_b", "games",
+                       "draft", "wins_a", "wins_b", "auto_a", "auto_b", "missed_a", "missed_b", "deadline", "winner",
+                       "forfeit", "finished_at")
 
     def has_add_permission(self, request):
         return False

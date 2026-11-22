@@ -15,7 +15,9 @@
   var ui = { role: null, search: "", onlyPlayed: false, selected: null, busy: false, error: "" };
   // L'animation : les coups arrivent tous d'un coup du serveur, la page les
   // rejoue un par un (DELAY entre deux coups adverses, comme une vraie draft).
-  var DELAY = 5000, FAST = 1200;
+  var DUEL = root.dataset.mode === "duel";
+  // En 1V1, les coups d'en face ont déjà pris leur temps : on les rejoue vite.
+  var DELAY = DUEL ? 700 : 5000, FAST = DUEL ? 400 : 1200;
   var view = null;        // la draft affichée pendant une animation
   var queue = [];         // les étapes restant à jouer
   var auto = { on: false, timer: null };
@@ -113,6 +115,21 @@
 
   // ---------------------------------------------------------------- rendu
   function header() {
+    if (DUEL) {
+      var live = state.raw_status === "lineup" || state.raw_status === "draft";
+      return h("div", { class: "bo5-head" }, [
+        h("div", {}, [
+          h("h1", { text: "Duel contre " + state.team }),
+          h("p", { class: "muted" }, ["Premier à 3 victoires · méta tirée pour ce duel",
+            state.opponent_auto && live ? " · " + state.team + " est en mode auto" : ""]),
+        ]),
+        h("div", { class: "bo5-score", "aria-label": "Score du duel" }, [
+          h("b", { class: state.wins > state.losses ? "lead" : "", text: String(state.wins) }),
+          h("span", { text: "–" }),
+          h("b", { class: state.losses > state.wins ? "lead" : "", text: String(state.losses) }),
+        ]),
+      ]);
+    }
     return h("div", { class: "bo5-head" }, [
       h("div", {}, [
         h("h1", { text: "Bo5 contre " + state.team }),
@@ -131,6 +148,15 @@
   }
 
   function result() {
+    if (DUEL) {
+      if (state.status !== "won" && state.status !== "lost") return null;
+      var won = state.status === "won";
+      return h("div", { class: "bo5-result " + (won ? "won" : "lost") }, [h("div", {}, [
+        h("h2", { text: (won ? "Victoire " : "Défaite ") + state.wins + "–" + state.losses }),
+        state.forfeit ? h("p", { text: won ? state.team + " a abandonné." : "Tu as abandonné." }) : null,
+        h("p", {}, [h("a", { class: "btn btn-gold", href: root.dataset.back, text: "Retour au 1V1" })]),
+      ])]);
+    }
     if (state.status === "won") {
       return h("div", { class: "bo5-result won" }, [
         h("div", {}, [
@@ -156,11 +182,23 @@
     return null;
   }
 
+  function duelDeadline(text) {
+    return state.deadline ? h("p", { class: "duel-clock" }, [text + " ", countdown(state.deadline)]) : null;
+  }
+
   function lineup() {
+    if (DUEL && state.lineup_done) {
+      return h("div", { class: "duel-wait" }, [
+        h("div", { class: "strap" }, [h("h2", { text: "Tes joueurs sont prêts" })]),
+        h("p", { class: "muted", text: "En attente de " + state.team + " : vous découvrirez vos alignements en même temps." }),
+        duelDeadline("Choix automatique dans"),
+        h("div", { class: "lineup-row" }, state.lineup.map(function (c) { return miniCard(c); })),
+      ]);
+    }
     var picks = {};
     var cols = fixed.roles.map(function (role, i) {
       var options = (fixed.choices[role] || []).map(function (c) {
-        return h("option", { value: c.id, text: c.ign + " · " + c.overall + " · " + c.rarity.name.toLowerCase() + " · " + c.split });
+        return h("option", { value: c.id, text: (c.meta ? "★ +" + c.meta + " % · " : "") + c.ign + " · " + c.overall + " · " + c.rarity.name.toLowerCase() + " · " + c.split });
       });
       var select = h("select", { name: role, required: true, onchange: function () { picks[role] = this.value; } },
         [h("option", { value: "", text: "— choisir —" })].concat(options));
@@ -174,7 +212,10 @@
     });
     return h("div", {}, [
       h("div", { class: "strap" }, [h("h2", { text: "Choisis tes 5 joueurs" })]),
-      h("p", { class: "muted", text: "Face à chaque joueur adverse, aligne un joueur de ta collection au même poste. Ses notes sont celles de ce tournoi ; les tiennes, celles de ta carte, avec le bonus de sa meilleure rareté." }),
+      h("p", { class: "muted", text: DUEL
+        ? "Aligne un joueur de ta collection à chaque poste. Ceux marqués ★ remplissent la méta du duel. Les joueurs d'en face restent cachés jusqu'à ce que vous ayez validé tous les deux."
+        : "Face à chaque joueur adverse, aligne un joueur de ta collection au même poste. Ses notes sont celles de ce tournoi ; les tiennes, celles de ta carte, avec le bonus de sa meilleure rareté." }),
+      DUEL ? duelDeadline("Il te reste") : null,
       h("form", {
         class: "lineup-form", onsubmit: function (e) {
           e.preventDefault();
@@ -226,7 +267,7 @@
     function line(side, who) {
       if (!side) return null;
       return h("div", { class: "special-side" }, [
-        h("p", {}, [h("b", { text: who }), " : la forme de " + side.player + " (" + side.role + ")"]),
+        h("p", {}, [h("b", { text: who }), " : la forme de " + side.player + " (" + side.role + ")" + (side.year ? ", en " + side.year : "")]),
         h("div", { class: "special-list" }, side.effects.map(function (e) {
           return h("span", { class: "special-effect " + (e.points > 0 ? "up" : (e.points < 0 ? "down" : "")) }, [
             champ(e.champion).icon ? h("img", { src: champ(e.champion).icon, alt: "", class: "champ-icon tiny" }) : null,
@@ -238,7 +279,8 @@
     }
     return h("div", { class: "special" }, [
       h("p", {}, [h("b", { text: "Particularité de la partie : " }),
-        "dans chaque équipe, un joueur en vedette dont les champions préférés gagnent ou perdent des points selon leur bilan en " + special.year + ". Elle compte pour toi comme pour l'adversaire."]),
+        "dans chaque équipe, un joueur en vedette dont les champions préférés gagnent ou perdent des points selon leur bilan " +
+        (special.year ? "en " + special.year : "l'année de sa carte") + ". Elle compte pour toi comme pour l'adversaire."]),
       line(special.user, "Chez toi"),
       line(special.opponent, "Chez " + state.team),
     ]);
@@ -268,7 +310,7 @@
         } }),
         h("b", { text: " Mode auto" }),
       ]),
-      h("p", { class: "small muted", text: "Il joue à ta place, simplement : pour un pick, le champion libre le mieux noté d'un de tes joueurs ; pour un ban, le champion que l'adversaire a le plus joué. Il ne regarde ni les face-à-face, ni la cohérence de la compo, ni la particularité de la partie : à toi de faire mieux !" }),
+      h("p", { class: "small muted", text: "Il joue à ta place, simplement : pour un pick, le champion libre le mieux noté d'un de tes joueurs ; pour un ban, le champion que l'adversaire a le plus joué. Il ne regarde ni les face-à-face, ni la cohérence de la compo, ni la particularité de la partie" + (DUEL ? ", ni la méta du duel" : "") + " : à toi de faire mieux !" }),
       h("label", { class: "small" }, [
         h("input", { type: "checkbox", checked: !!ui.fast, onchange: function () {
           ui.fast = this.checked;
@@ -281,11 +323,23 @@
 
   function turnPanel() {
     var d = state.draft, turn = d.turn;
-    if (!turn || turn.team !== "user") return h("p", { class: "muted", text: "L'adversaire réfléchit…" });
+    if (!turn || turn.team !== "user") {
+      if (DUEL) return h("div", { class: "draft-turn is-waiting" }, [
+        h("p", { class: "draft-step" }, [h("b", { text: state.team + (turn && turn.type === "ban" ? " bannit…" : " choisit…") })]),
+        duelDeadline(state.opponent_auto ? "Mode auto" : "Coup automatique dans"),
+      ]);
+      return h("p", { class: "muted", text: "L'adversaire réfléchit…" });
+    }
+    if (DUEL && state.auto_forced) {
+      return h("div", { class: "draft-turn is-auto" }, [
+        h("p", { class: "draft-step" }, [h("b", { text: "Tu as manqué 3 tours : le mode auto joue pour toi jusqu'à la fin du duel." })]),
+      ]);
+    }
     if (auto.on) {
       return h("div", { class: "draft-turn is-auto" }, [
         h("p", { class: "draft-step" }, ["Étape " + d.step + " sur " + d.steps + " : ",
           h("b", { text: "le mode auto " + (turn.type === "ban" ? "bannit" : "choisit") + " pour toi…" })]),
+        DUEL ? duelDeadline("Fin du tour dans") : null,
         h("div", { class: "timer", style: "--delay:" + delay() + "ms" }, [h("span")]),
       ]);
     }
@@ -326,6 +380,7 @@
         note ? h("span", { class: "ct-note", text: note }) : null,
         sp ? h("span", { class: "ct-special " + (sp.points >= 0 ? "up" : "down"), title: "Particularité de la partie",
           text: (sp.points > 0 ? "+" : "") + sp.points }) : null,
+        metaFor(t.c.id) ? h("span", { class: "ct-meta", title: "Méta du duel", text: "+" + metaFor(t.c.id) + " %" }) : null,
       ]);
     }));
     if (!tiles.length) grid.appendChild(h("p", { class: "muted", text: "Aucun champion ne correspond." }));
@@ -339,6 +394,7 @@
     return h("div", { class: "draft-turn", "data-kind": turn.type }, [
       h("p", { class: "draft-step" }, ["Étape " + d.step + " sur " + d.steps + " : ",
         h("b", { text: isPick ? "à toi de choisir un champion pour un de tes joueurs" : "à toi de bannir un champion" })]),
+      DUEL ? duelDeadline("Il te reste") : null,
       isPick ? h("div", { class: "draft-roles", role: "tablist", "aria-label": "Pour quel joueur" }, openRoles.map(function (role) {
         var i = fixed.roles.indexOf(role);
         return h("button", {
@@ -366,6 +422,30 @@
         }),
       ]),
     ]);
+  }
+
+  function metaFor(id) {
+    if (!DUEL || !ui.role) return 0;
+    var m = (fixed.metaChampions || {})[ui.role] || {};
+    return m[id] || 0;
+  }
+
+  function metaPanel() {
+    if (!DUEL || !state.meta || !state.meta.length) return null;
+    return h("div", { class: "duel-meta" }, [
+      h("p", {}, [h("b", { text: "Méta du duel" }), " : un bonus par poste, ajouté au bonus de rareté, pour les deux joueurs."]),
+      h("ol", { class: "meta-rules is-compact" }, state.meta.map(function (r) {
+        return h("li", { class: "meta-rule" }, [h("span", { class: "meta-role", text: r.role }),
+          h("b", { class: "meta-bonus", text: (r.kind === "offmeta" ? "jusqu'à " : "") + "+" + r.bonus + " %" }),
+          h("p", { text: r.label })]);
+      })),
+    ]);
+  }
+
+  function forfeitButton() {
+    if (!DUEL || (state.raw_status !== "lineup" && state.raw_status !== "draft")) return null;
+    return h("p", { class: "duel-forfeit" }, [h("button", { type: "button", class: "btn btn-small btn-ghost", text: "Abandonner le duel",
+      onclick: function () { if (window.confirm("Abandonner ce duel ? " + state.team + " gagnera.")) send({ type: "forfeit" }); } })]);
   }
 
   function draft() {
@@ -523,9 +603,11 @@
     var parts = [header()];
     if (ui.error) parts.push(h("p", { class: "flash flash-error", role: "alert", text: ui.error }));
     parts.push(result());
+    parts.push(metaPanel());
     if (state.status === "lineup") parts.push(lineup());
     if (view || (state.status === "draft" && state.draft)) parts.push(draft());
     parts.push(games());
+    parts.push(forfeitButton());
     root.replaceChildren.apply(root, parts.filter(Boolean));
     var grid = root.querySelector(".champ-grid");
     if (grid && !ui.flash) grid.scrollTop = top;
@@ -544,6 +626,32 @@
     var again = root.querySelector("[data-focus=" + name + "]");
     if (again) { again.focus(); if (pos !== null) again.setSelectionRange(pos, pos); }
   }
+
+  // 1V1 : l'état est redemandé toutes les 2 s (les coups d'en face, les délais).
+  function signature(st) {
+    var d = st.draft;
+    return [st.raw_status, st.games.length, d ? d.actions.length : -1, st.lineup_done, st.opponent_ready,
+      st.auto_forced, st.opponent_auto, st.deadline].join("|");
+  }
+  function poll() {
+    if (ui.busy || queue.length || document.hidden) return;
+    if (state.raw_status !== "lineup" && state.raw_status !== "draft") return;
+    var needStatic = state.lineup_done && (!fixed.ratings || (state.opponent_ready && !fixed.hints));
+    fetch(root.dataset.state + (needStatic ? "?static=1" : ""), { credentials: "same-origin" })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (ui.busy || queue.length || !data.state) return;
+        if (data.static) { fixed = data.static; index(); }
+        var before = state, after = data.state;
+        if (signature(before) === signature(after) && !data.static) return;
+        var played = after.games.length > before.games.length ? after.games[0].number : null;
+        if (before.status === "draft" && before.draft && (after.draft || played)) {
+          try { replay(before, after, played); } catch (e) { queue = []; view = null; state = after; render(); }
+        } else { state = after; render(); }
+      })
+      .catch(function () { /* réessai au prochain tour */ });
+  }
+  if (DUEL) setInterval(poll, 2000);
 
   render();
 })();

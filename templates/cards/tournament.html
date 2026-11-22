@@ -1,14 +1,15 @@
 {% extends "base.html" %}
-{% block title %}Tournoi — LeagueGacha{% endblock %}
+{% block title %}Tournoi PvE — LeagueGacha{% endblock %}
 {% block content %}
 <div class="page-head">
   <div>
-    <h1>Tournoi</h1>
+    <h1>Tournoi PvE</h1>
     <p>Rejoue un tournoi international : affronte ses équipes de la dernière à la gagnante, en Bo5.
-      À chaque partie, toi et l'adversaire choisissez vos champions à l'aveugle, en Fearless : un champion joué ne revient plus du Bo5.
+      À chaque partie, une draft de tournoi à tour de rôle, en Fearless : un champion joué ne revient plus du Bo5.
       Une défaite ne t'élimine pas, tu retentes après une courte attente.</p>
   </div>
 </div>
+{% include "cards/_tournament_tabs.html" with tab="pve" %}
 
 {% for t in tournaments %}
   <section class="tourney">

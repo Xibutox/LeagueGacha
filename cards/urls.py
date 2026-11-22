@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import faille_views, quiz_views, tournament_views, views
+from . import duel_views, faille_views, quiz_views, tournament_views, views
 
 app_name = "cards"
 
@@ -25,6 +25,13 @@ urlpatterns = [
     path("tournoi/<int:pk>/defier/", tournament_views.tournament_start, name="tournament_start"),
     path("tournoi/serie/<int:pk>/", tournament_views.tournament_series, name="tournament_series"),
     path("tournoi/serie/<int:pk>/coup/", tournament_views.tournament_action, name="tournament_action"),
+    path("tournoi/1v1/", duel_views.duel_home, name="duels"),
+    path("tournoi/1v1/inviter/", duel_views.duel_invite, name="duel_invite"),
+    path("tournoi/1v1/<int:pk>/", duel_views.duel_page, name="duel"),
+    path("tournoi/1v1/<int:pk>/repondre/", duel_views.duel_respond, name="duel_respond"),
+    path("tournoi/1v1/<int:pk>/annuler/", duel_views.duel_cancel, name="duel_cancel"),
+    path("tournoi/1v1/<int:pk>/etat/", duel_views.duel_state, name="duel_state"),
+    path("tournoi/1v1/<int:pk>/coup/", duel_views.duel_action, name="duel_action"),
     path("equipes/nouvelle/", views.roster_edit, name="roster_new"),
     path("equipes/apercu/", views.roster_preview, name="roster_preview"),
     path("equipes/<int:pk>/", views.roster_edit, name="roster_edit"),

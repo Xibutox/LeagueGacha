@@ -1,0 +1,4 @@
+<nav class="subtabs" aria-label="Tournoi">
+  <a href="{% url 'cards:tournament' %}"{% if tab == 'pve' %} class="is-active" aria-current="page"{% endif %}>Tournoi PvE</a>
+  <a href="{% url 'cards:duels' %}"{% if tab == 'duel' %} class="is-active" aria-current="page"{% endif %}>1V1{% if user.is_authenticated %}{% with n=duels_waiting %}{% if n %} <span class="tab-count">{{ n }}</span>{% endif %}{% endwith %}{% endif %}</a>
+</nav>

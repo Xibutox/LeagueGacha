@@ -185,7 +185,12 @@ def _role_cards(role: str) -> list[dict]:
 def generate_rules(week: date) -> dict:
     """5 bonus de 5 types différents, un par poste, tirés au sort (le même
     tirage pour une semaine donnée)."""
-    rng = random.Random(f"meta-{week.isoformat()}")
+    return generate_rules_seeded(f"meta-{week.isoformat()}")
+
+
+def generate_rules_seeded(seed: str) -> dict:
+    """Une méta (5 bonus, un par poste, de types différents) pour cette graine."""
+    rng = random.Random(seed)
     kinds = list(KINDS)
     rng.shuffle(kinds)
     rules = {}

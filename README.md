@@ -183,6 +183,18 @@ de carte vaut à peu près celle de DPM.lol + 15.
   d'année) ; +1 % au score de ses équipes, permanentes et de la semaine,
   par joueur de cette équipe aligné. Pas en tournoi.
 
+## 1V1
+
+Sous-onglet du Tournoi (à côté du « Tournoi PvE ») : un Bo5 contre un autre
+joueur du site, invité par son pseudo, avec les règles du tournoi (5 joueurs
+de sa collection, draft à tour de rôle en Fearless, score avec face-à-face,
+cohérence et particularité de la partie). Chaque duel tire sa propre méta
+(un bonus par poste, comme l'équipe de la semaine). 2 min pour choisir ses
+joueurs, 30 s par coup : au-delà, le coup est joué automatiquement, et après
+3 coups manqués tout le reste du duel. Pas de récompense : pour le plaisir.
+Code : `cards/duel.py` ; la page reprend `static/js/tournament.js` (mode
+« duel », état redemandé toutes les 2 s).
+
 ## La Faille (le clicker)
 
 Un clicker roguelite d'une semaine, remis à zéro chaque lundi (onglet « La

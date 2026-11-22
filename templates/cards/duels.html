@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+{% block title %}1V1 — LeagueGacha{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>1V1</h1>
+    <p>Défie un autre joueur en Bo5, avec les règles du tournoi : 5 joueurs de ta collection, draft à tour de rôle en Fearless.
+      Chaque duel tire sa propre méta : un bonus par poste, comme l'équipe de la semaine.
+      {{ turn_seconds }} s par coup : au-delà, le coup est joué automatiquement, et après 3 coups manqués tout le reste du duel aussi.</p>
+  </div>
+</div>
+{% include "cards/_tournament_tabs.html" with tab="duel" %}
+
+<section class="duel-invite panel">
+  <h2>Défier un joueur</h2>
+  {% if missing %}
+    <p class="muted">Il te faut un joueur à chaque poste dans ta collection (il te manque : {{ missing|join:", " }}).</p>
+  {% else %}
+    <form method="post" action="{% url 'cards:duel_invite' %}" class="duel-form">{% csrf_token %}
+      <label for="duel-user" class="sr-only">Joueur à défier</label>
+      <input id="duel-user" name="username" list="duel-players" placeholder="Pseudo du joueur" autocomplete="off" required>
+      <datalist id="duel-players">{% for name in players %}<option value="{{ name }}">{% endfor %}</datalist>
+      <button class="btn btn-gold" type="submit">Envoyer l'invitation</button>
+    </form>
+    <p class="muted small">L'invitation reste valable 24 h. Le duel commence dès qu'elle est acceptée : vous avez alors 2 min pour choisir vos joueurs.</p>
+  {% endif %}
+</section>
+
+{% if received %}
+<section class="duel-list">
+  <div class="strap"><h2>Invitations reçues</h2></div>
+  <ul>
+    {% for d in received %}
+      <li class="duel-row is-highlight">
+        <span><b>{{ d.challenger.username }}</b> te défie</span>
+        <span class="muted small">il y a {{ d.created_at|timesince }}</span>
+        <form method="post" action="{% url 'cards:duel_respond' d.pk %}" class="inline">{% csrf_token %}
+          <button class="btn btn-small btn-gold" name="answer" value="accept" type="submit">Accepter</button>
+          <button class="btn btn-small btn-ghost" name="answer" value="decline" type="submit">Refuser</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if ongoing %}
+<section class="duel-list">
+  <div class="strap"><h2>Duels en cours</h2></div>
+  <ul>
+    {% for d in ongoing %}
+      <li class="duel-row">
+        <span>Contre <b>{{ d.them.username }}</b></span>
+        <span class="duel-score">{{ d.my_wins }} – {{ d.their_wins }}</span>
+        <span class="muted small">{{ d.get_status_display }}</span>
+        <a class="btn btn-small btn-gold" href="{% url 'cards:duel' d.pk %}">Jouer</a>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+{% if sent %}
+<section class="duel-list">
+  <div class="strap"><h2>Invitations envoyées</h2></div>
+  <ul>
+    {% for d in sent %}
+      <li class="duel-row">
+        <span>À <b>{{ d.opponent.username }}</b></span>
+        <span class="muted small">en attente depuis {{ d.created_at|timesince }}</span>
+        <form method="post" action="{% url 'cards:duel_cancel' d.pk %}" class="inline">{% csrf_token %}
+          <button class="btn btn-small btn-ghost" type="submit">Annuler</button>
+        </form>
+      </li>
+    {% endfor %}
+  </ul>
+</section>
+{% endif %}
+
+<section class="duel-list">
+  <div class="strap"><h2>Derniers duels</h2></div>
+  {% if history %}
+  <ul>
+    {% for d in history %}
+      <li class="duel-row {% if d.winner_id == user.pk %}is-won{% else %}is-lost{% endif %}">
+        <span>Contre <b>{{ d.them.username }}</b></span>
+        <span class="duel-score">{{ d.my_wins }} – {{ d.their_wins }}</span>
+        <span class="small">{% if d.winner_id == user.pk %}Victoire{% else %}Défaite{% endif %}{% if d.forfeit %} (abandon){% endif %}</span>
+        <a class="small" href="{% url 'cards:duel' d.pk %}">Revoir</a>
+      </li>
+    {% endfor %}
+  </ul>
+  {% else %}
+    <p class="muted">Pas encore de duel terminé.</p>
+  {% endif %}
+</section>
+{% endblock %}

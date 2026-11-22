@@ -1,0 +1,12 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Duel contre {% if duel.challenger_id == user.pk %}{{ duel.opponent.username }}{% else %}{{ duel.challenger.username }}{% endif %} — LeagueGacha{% endblock %}
+{% block content %}
+<p class="small"><a href="{% url 'cards:duels' %}">← 1V1</a></p>
+<div id="bo5" data-mode="duel" data-action="{{ action_url }}" data-state="{{ state_url }}" data-back="{% url 'cards:duels' %}" data-csrf="{{ csrf_token }}">
+  <noscript><p>Le 1V1 a besoin de JavaScript.</p></noscript>
+</div>
+{{ state|json_script:"bo5-state" }}
+{{ static|json_script:"bo5-static" }}
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/tournament.js' %}?v=23" defer></script>{% endblock %}

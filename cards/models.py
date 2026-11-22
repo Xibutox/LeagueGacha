@@ -896,3 +896,74 @@ class FailleAchievement(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.code}"
+
+
+# --------------------------------------------------------------------- Duels 1V1
+class Duel(models.Model):
+    """Un Bo5 entre deux joueurs du site (cards/duel.py), avec les règles du
+    mode tournoi et une méta tirée pour le duel. Côté « a » : celui qui
+    invite ; côté « b » : l'invité. Les coups de la draft sont notés
+    {team: "a"|"b", type, champion, role}."""
+
+    class Status(models.TextChoices):
+        INVITED = "invited", "invitation envoyée"
+        DECLINED = "declined", "refusé"
+        CANCELLED = "cancelled", "annulé"
+        EXPIRED = "expired", "expiré"
+        LINEUP = "lineup", "choix des joueurs"
+        DRAFT = "draft", "en cours"
+        FINISHED = "finished", "terminé"
+
+    OPEN = (Status.INVITED, Status.LINEUP, Status.DRAFT)
+    WINS_NEEDED = 3
+
+    challenger = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="invitant", on_delete=models.CASCADE,
+                                   related_name="duels_sent")
+    opponent = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="invité", on_delete=models.CASCADE,
+                                 related_name="duels_received")
+    status = models.CharField("état", max_length=10, choices=Status.choices, default=Status.INVITED, db_index=True)
+    meta = models.JSONField("méta du duel", default=dict, blank=True, help_text="Un bonus par poste (cards/weekly.py).")
+    lineup_a = models.JSONField("joueurs de l'invitant", default=dict, blank=True)
+    lineup_b = models.JSONField("joueurs de l'invité", default=dict, blank=True)
+    rarities_a = models.JSONField("raretés de l'invitant", default=dict, blank=True)
+    rarities_b = models.JSONField("raretés de l'invité", default=dict, blank=True)
+    games = models.JSONField("parties", default=list, blank=True)
+    draft = models.JSONField("draft en cours", default=dict, blank=True)
+    wins_a = models.PositiveSmallIntegerField("victoires de l'invitant", default=0)
+    wins_b = models.PositiveSmallIntegerField("victoires de l'invité", default=0)
+    auto_a = models.BooleanField("invitant en automatique", default=False)
+    auto_b = models.BooleanField("invité en automatique", default=False)
+    missed_a = models.PositiveSmallIntegerField("tours manqués (invitant)", default=0)
+    missed_b = models.PositiveSmallIntegerField("tours manqués (invité)", default=0)
+    deadline = models.DateTimeField("fin du tour", null=True, blank=True)
+    winner = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="vainqueur", on_delete=models.SET_NULL,
+                               null=True, blank=True, related_name="+")
+    forfeit = models.BooleanField("abandon", default=False)
+    created_at = models.DateTimeField("créé le", auto_now_add=True)
+    updated_at = models.DateTimeField("modifié le", auto_now=True)
+    finished_at = models.DateTimeField("terminé le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "duel 1V1"
+        verbose_name_plural = "duels 1V1"
+        ordering = ["-updated_at"]
+
+    def __str__(self):
+        return f"{self.challenger} vs {self.opponent} ({self.wins_a}-{self.wins_b})"
+
+    def side_of(self, user) -> str | None:
+        if user.pk == self.challenger_id:
+            return "a"
+        if user.pk == self.opponent_id:
+            return "b"
+        return None
+
+    def user_of(self, side: str):
+        return self.challenger if side == "a" else self.opponent
+
+    def used_champions(self) -> set[int]:
+        used = set()
+        for game in self.games or []:
+            for side in ("a", "b"):
+                used |= {int(c) for c in (game.get(f"picks_{side}") or {}).values()}
+        return used
