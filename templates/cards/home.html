@@ -65,12 +65,13 @@
       {% if s %}
         <div class="pack-stock">
           {% if s.unlimited %}
-            <b>∞</b><span>illimité (compte staff)</span>
+            <b><svg class="infinity" viewBox="0 0 24 12" role="img" aria-label="illimité"><path d="M6 1.5C3.2 1.5 1 3.6 1 6s2.2 4.5 5 4.5c3.6 0 8.4-9 12-9 2.8 0 5 2.1 5 4.5s-2.2 4.5-5 4.5c-3.6 0-8.4-9-12-9Z"/></svg></b><span>illimité (compte staff)</span>
           {% else %}
             <b title="Boosters ouverts sur ce portail">{{ s.used }}<small class="muted"> / {{ s.max }}</small></b>
             <span>{% if s.available %}{% if s.used %}le suivant est prêt{% else %}le premier est offert{% endif %}{% elif s.next_at %}suivant dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% elif s.too_late %}le suivant tomberait après la fermeture{% else %}terminé pour toi{% endif %}</span>
           {% endif %}
         </div>
+        {% if not s.unlimited %}<div class="meter" aria-hidden="true"><span style="width: {% widthratio s.used s.max 100 %}%"></span></div>{% endif %}
         <form method="post" action="{% url 'cards:open_portal' portal.pk %}">{% csrf_token %}
           <button class="btn {% if s.available %}btn-gold{% else %}btn-ghost{% endif %}" type="submit" {% if not s.available %}disabled{% endif %}>Ouvrir</button>
         </form>
@@ -84,10 +85,11 @@
     {% with s=booster.status %}
     <article class="pack-tile{% if s and s.available or s and s.unlimited %} is-ready{% endif %}" style="--booster: {{ booster.color }}">
       {% include "cards/_pack_art.html" with booster=booster showcase=booster.showcase %}
+      <p class="portal-clock"><span class="portal-badge">Booster</span> ferme dans <svg class="infinity" viewBox="0 0 24 12" role="img" aria-label="jamais"><path d="M6 1.5C3.2 1.5 1 3.6 1 6s2.2 4.5 5 4.5c3.6 0 8.4-9 12-9 2.8 0 5 2.1 5 4.5s-2.2 4.5-5 4.5c-3.6 0-8.4-9-12-9Z"/></svg></p>
       {% if s %}
         <div class="pack-stock">
           {% if s.unlimited %}
-            <b>∞</b><span>illimité (compte staff)</span>
+            <b><svg class="infinity" viewBox="0 0 24 12" role="img" aria-label="illimité"><path d="M6 1.5C3.2 1.5 1 3.6 1 6s2.2 4.5 5 4.5c3.6 0 8.4-9 12-9 2.8 0 5 2.1 5 4.5s-2.2 4.5-5 4.5c-3.6 0-8.4-9-12-9Z"/></svg></b><span>illimité (compte staff)</span>
           {% else %}
             <b class="{% if not s.available %}empty{% endif %}">{{ s.available }}<small class="muted"> / {{ s.max }}</small></b>
             <span>{% if s.gifted %}dont {{ s.gifted }} offert{{ s.gifted|pluralize }} · {% endif %}{% if s.next_at %}+1 dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time>{% else %}réserve pleine{% endif %}</span>
@@ -117,4 +119,4 @@
 </div>
 {% endif %}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/showcase.js' %}?v=11" defer></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/showcase.js' %}?v=12" defer></script>{% endblock %}
