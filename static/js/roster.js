@@ -296,10 +296,13 @@
     var cardId = st.card;
     var mine = {};
     st.champions.forEach(function (cid, i) { if (cid && i !== mode.index) mine[cid] = i + 1; });
+    // Fearless : un champion ne sert qu'une fois dans toute l'équipe.
     var inComp = {};
     data.roles.forEach(function (r) {
-      var cid = state[r].champions[mode.index];
-      if (r !== mode.role && cid) inComp[cid] = r;
+      if (r === mode.role) return;
+      state[r].champions.forEach(function (cid, i) {
+        if (cid) inComp[cid] = r + (i === mode.index ? " dans cette compo" : " en compo " + (i + 1));
+      });
     });
     var onlyPlayed = pickerPlayed.checked && !q;
     var list = data.champions.map(function (c) { return { c: c, r: rating(cardId, c.id) }; })
@@ -307,7 +310,7 @@
       .sort(function (a, b) { return (b.r.played - a.r.played) || (b.r.rating - a.r.rating) || a.c.name.localeCompare(b.c.name); });
     list.forEach(function (x) {
       var c = x.c, r = x.r;
-      var blocked = mine[c.id] ? "déjà en compo " + mine[c.id] : (inComp[c.id] ? "pris par le " + inComp[c.id] + " dans cette compo" : "");
+      var blocked = mine[c.id] ? "déjà en compo " + mine[c.id] : (inComp[c.id] ? "fearless : pris par le " + inComp[c.id] : "");
       var games = r.played ? (r.games ? r.games + " partie" + (r.games > 1 ? "s" : "") : "") + (r.before ? (r.games ? " · " : "") + r.before + " avant" : "") : "jamais joué";
       pickerGrid.appendChild(el("button", {
         type: "button", class: "pick-champ" + (st.champions[mode.index] === c.id ? " is-current" : "") + (r.played ? " is-played" : ""),

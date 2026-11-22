@@ -16,7 +16,7 @@
   </div>
 
   <p class="builder-help muted">
-    Pour chaque poste, choisis un joueur de ta collection puis 5 champions différents.
+    Pour chaque poste, choisis un joueur de ta collection puis 5 champions. Fearless : un champion ne sert qu'une fois dans toute l'équipe, tous postes confondus.
     La composition 1 réunit le premier champion de chaque joueur, et ainsi de suite.
     Poste = moitié note du joueur, moitié note sur le champion, plus le bonus de rareté.
     Composition = la moyenne de ses postes à 75 %, sa cohérence à 25 %.
@@ -48,4 +48,4 @@
 </dialog>
 {{ data|json_script:"builder-data" }}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/roster.js' %}?v=12"></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/roster.js' %}?v=13"></script>{% endblock %}

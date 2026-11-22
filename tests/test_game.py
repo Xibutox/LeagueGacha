@@ -385,15 +385,19 @@ def owned(split, bob):
 def champion_ids(split):
     from esport.models import Champion
 
-    return list(Champion.objects.order_by("name").values_list("pk", flat=True))
+    ids = list(Champion.objects.order_by("name").values_list("pk", flat=True))
+    # Fearless : 25 champions différents pour une équipe complète.
+    for n in range(max(0, 30 - len(ids))):
+        ids.append(Champion.objects.create(name=f"Champion {n:02d}", key=f"Champion{n:02d}").pk)
+    return ids
 
 
 def team_picks(owned, champion_ids):
-    """Un carré latin : 5 champions différents par joueur, et dans chaque
-    composition 5 champions différents."""
+    """25 champions différents (fearless) : le premier de chaque joueur est
+    l'un des champions joués du jeu d'essai, les autres viennent de la suite."""
+    base, extra = champion_ids[:5], champion_ids[5:]
     return {
-        role: {"card": owned[role].pk,
-               "champions": [champion_ids[(j + k) % len(champion_ids)] for k in range(5)]}
+        role: {"card": owned[role].pk, "champions": [base[j]] + extra[j * 4:(j + 1) * 4]}
         for j, role in enumerate(ROLES)
     }
 

@@ -942,6 +942,16 @@ def evaluate_roster(user, picks: dict, check: bool = False) -> dict:
                 [e["score"] for e in filled], coherence["score"]))
         compositions.append(comp)
 
+    # Fearless : un champion ne sert qu'une fois dans toute l'équipe, quels
+    # que soient le poste et la composition.
+    used: dict[int, str] = {}
+    for role in ROLES:
+        for e in (slots[role]["champions"] if role in slots else []):
+            if not e:
+                continue
+            if e["id"] in used and used[e["id"]] != role:
+                fail(f"Fearless : {e['name']} est déjà pris par le {used[e['id']]}, un champion ne sert qu'une fois dans l'équipe.")
+            used.setdefault(e["id"], role)
     complete = len(slots) == len(ROLES) and all(c["complete"] for c in compositions) and not errors
     for s in slots.values():
         for e in s["champions"]:
