@@ -94,6 +94,10 @@
     var e = enemyAt(state.step);
     if (!e) { needEnemies(); return; }
     fight = new E.Fight(e, stats, { epic: isEpic(e.kind) });
+    var bar = $("fl-enemy-hp"), target = $("fl-target");
+    bar.style.transition = "none"; bar.style.width = "100%"; void bar.offsetWidth; bar.style.transition = "";
+    target.classList.remove("is-dead", "is-away");
+    target.removeAttribute("aria-disabled");
     var info = data.enemyInfo[e.kind] || {};
     $("fl-enemy-name").textContent = (e.errant ? "Nashor errant" : info.name || e.kind);
     $("fl-enemy-tag").textContent = (info.epic ? "épique" : info.camp ? "camp" : "sbire") + " · " +
@@ -127,9 +131,20 @@
       sync();
     }
     if (autoAdvance && state.step < state.best) state.step += 1;
-    fight = null;
+    endFight("is-dead", "Vaincu · en route vers l'étape " + state.step + "…");
     travel = E.travelTime(stats);
     needEnemies();
+  }
+  // Fin d'un combat : la barre se vide tout de suite et l'ennemi s'efface
+  // pendant le trajet (les clics n'y font plus rien).
+  function endFight(cls, text) {
+    if (fight) {
+      $("fl-enemy-hp").style.width = cls === "is-dead" ? "0%" : $("fl-enemy-hp").style.width;
+      $("fl-enemy-hp-text").textContent = text;
+    }
+    fight = null;
+    $("fl-target").classList.add(cls);
+    $("fl-target").setAttribute("aria-disabled", "true");
   }
   function lose() {
     var e = fight.enemy;
@@ -138,7 +153,7 @@
     if (state.stacks && state.stacks.mejai) state.stacks.mejai = Math.floor(state.stacks.mejai / 2);
     log((data.enemyInfo[e.kind] || {}).name + " t'a vaincu : retour à l'étape " + Math.max(0, state.step - 1) + ".", "lose");
     state.step = Math.max(0, state.step - 1);
-    fight = null;
+    endFight("is-away", "Repli vers l'étape " + state.step + "…");
     travel = E.travelTime(stats) * 2;
   }
 
@@ -156,7 +171,7 @@
     var hit = $("fl-target");
     hit.classList.remove("is-hit"); void hit.offsetWidth; hit.classList.add("is-hit");
     if (fight.done === "win") win();
-    renderBars();
+    else renderBars();
   }
   function ownsAny(ids) { return (state.inv || []).some(function (s) { return ids.indexOf(s.id) >= 0; }); }
 
@@ -536,8 +551,8 @@
   $("fl-target").addEventListener("keydown", function (e) { if (e.key === " " || e.key === "Enter") { e.preventDefault(); click(e); } });
   $("fl-smite").addEventListener("click", smite);
   $("fl-auto").addEventListener("change", function (e) { autoAdvance = e.target.checked; });
-  $("fl-prev").addEventListener("click", function () { if (state.step > 0) { state.step -= 1; fight = null; travel = 0.2; } });
-  $("fl-next").addEventListener("click", function () { if (state.step < state.best) { state.step += 1; fight = null; travel = 0.2; } });
+  $("fl-prev").addEventListener("click", function () { if (state.step > 0) { state.step -= 1; endFight("is-away", "En route vers l'étape " + state.step + "…"); travel = 0.2; } });
+  $("fl-next").addEventListener("click", function () { if (state.step < state.best) { state.step += 1; endFight("is-away", "En route vers l'étape " + state.step + "…"); travel = 0.2; } });
 
   renderKinds();
   renderAll();
