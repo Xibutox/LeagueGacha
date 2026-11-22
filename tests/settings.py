@@ -29,4 +29,4 @@ PASSWORD_HASHERS = ["django.contrib.auth.hashers.MD5PasswordHasher"]
 # Pas d'appel à Data Dragon pendant les imports des tests.
 DDRAGON_AUTO_SYNC = False
 GAME_STAFF_UNLIMITED = True
-GAME_RATING_PRIOR_GAMES = 3
+GAME_RATING_LEAGUE_GAMES = 8

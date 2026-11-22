@@ -28,8 +28,9 @@ class League(models.Model):
         blank=True,
         validators=[MinValueValidator(Decimal("0.5")), MaxValueValidator(Decimal("1.5"))],
         help_text=(
-            "Multiplie la note de chaque partie jouée dans la ligue (1 = LEC). Vide : la valeur par "
-            "défaut (LCK, LPL 1,06 ; ligues régionales 0,88 à 0,92 ; international 1,06 à 1,10). "
+            "Le niveau du joueur moyen de la ligue : 1 = LCK ; chaque centième en moins retire environ "
+            "1 point aux cartes. Vide : la valeur par défaut (LPL 0,97, LEC 0,92, LCS 0,89, "
+            "ligues de développement 0,78 à 0,85 ; international 1). "
             "Après un changement : Splits › Recalculer stats et cartes."
         ),
     )

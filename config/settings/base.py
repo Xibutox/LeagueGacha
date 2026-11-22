@@ -307,10 +307,10 @@ GENERIC = {
 GAME_STAFF_UNLIMITED = env_bool("GAME_STAFF_UNLIMITED", True)
 # Durée (jours) des tournois créés automatiquement (chacun reste modifiable dans la gestion).
 GAME_TOURNAMENT_DAYS = env_int("GAME_TOURNAMENT_DAYS", 7)
-#: Dans la note d'un split, le nombre de parties « moyennes » (note 50)
+#: Dans la note d'un split, le nombre de parties « moyennes de la ligue »
 #: ajoutées à celles du joueur : moins il a joué, plus sa note reste proche
-#: de 50.
-GAME_RATING_PRIOR_GAMES = env_int("GAME_RATING_PRIOR_GAMES", 3)
+#: de la moyenne de sa ligue.
+GAME_RATING_LEAGUE_GAMES = env_int("GAME_RATING_LEAGUE_GAMES", 8)
 
 # -- Leaguepedia -------------------------------------------------------------
 

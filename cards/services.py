@@ -391,7 +391,7 @@ def compute_card_champions(split: Split) -> int:
                     rating=champion_rating(
                         [g[1] for g in games_now if g[1] is not None],
                         player_mean,
-                        settings.GAME_RATING_PRIOR_GAMES,
+                        settings.GAME_RATING_LEAGUE_GAMES,
                         history_scores=[g[1] for g in games_before if g[1] is not None],
                     ),
                 )

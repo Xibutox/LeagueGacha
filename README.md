@@ -143,18 +143,26 @@ les ouvertures suivent.
 
 ## Note d'un joueur
 
-La note s'inspire des notes par partie des sites de stats pros (DPM.lol ne
-publie pas sa formule) :
+La note s'inspire des notes par partie des sites de stats pros. DPM.lol ne
+publie pas sa formule, mais les réglages sont calés sur ses notes (premier
+split 2026, 226 joueurs de LCK, LPL, LEC, LCS : corrélation 0,93) : la note
+de carte vaut à peu près celle de DPM.lol + 15.
 
-1. **Chaque partie** reçoit une note de 0 à 100, où 50 est la partie moyenne
-   d'un pro du **même rôle**, sur toutes les parties importées. Métriques :
-   KDA, participation aux kills, morts/min, dégâts/min, part des dégâts,
-   dégâts par gold, CS/min, gold/min, vision/min, victoire. Les poids par
-   rôle sont dans `esport/scoring.py` (`ROLE_WEIGHTS`).
-2. **La note sur la période** est la moyenne de ses parties, tirée vers 50
-   quand il a peu joué (`GAME_RATING_PRIOR_GAMES`, 3 par défaut).
-3. **La note de la carte** (50 à 99) en découle ; un pro moyen a 74.
-4. **La note sur un champion** : ses parties dessus pendant la période (la
+1. **La performance d'une partie** (0 à 100, 50 = la partie moyenne d'un
+   pro du **même rôle** la même année). Métriques : KDA, participation aux
+   kills, morts/min, dégâts/min, part des dégâts, dégâts par gold, CS/min,
+   gold/min, vision/min, victoire. Les poids par rôle sont dans
+   `esport/scoring.py` (`ROLE_WEIGHTS`).
+2. **La valeur de la partie** : le niveau du joueur moyen de la ligue
+   (prestige : LCK 1, LPL 0,97, LEC 0,92, LCS 0,89…), plus la performance
+   (`GAME_SLOPE`), plus ou moins `WIN_SWING` selon la victoire.
+3. **La note sur la période** est la moyenne de ses parties, tirée vers la
+   moyenne de sa ligue quand il a peu joué (`GAME_RATING_LEAGUE_GAMES`, 8
+   par défaut) : une équipe éliminée tôt, avec peu de parties et de
+   mauvais résultats, ne sort pas du lot sur quelques bonnes stats.
+4. **La note de la carte** (50 à 99) en découle : joueur moyen de LCK ~80,
+   de LEC ~72, de LCS ~68.
+5. **La note sur un champion** : ses parties dessus pendant la période (la
    forme du moment) comptent pleinement, ses parties d'avant (historique)
    comptent à moitié (`HISTORY_WEIGHT`), le tout tiré vers sa note de la
    période quand il y en a peu. Deux parties moyennes cette saison mais

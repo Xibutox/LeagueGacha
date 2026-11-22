@@ -23,7 +23,7 @@ from django.utils.text import slugify
 
 from . import scoring
 from .leaguepedia import LeaguepediaClient, LeaguepediaError, chunked, in_clause, quote
-from .prestige import apply_prestige, league_prestige, prestige_prior
+from .prestige import league_base, league_prestige
 from .models import (
     GameAppearance,
     League,
@@ -533,12 +533,16 @@ class LeaguepediaImporter:
             GameAppearance.objects.filter(tournament__split=split).select_related("tournament__league").order_by("played_at")
         )
         # Le prestige de la ligue : la même partie vaut moins en ligue régionale qu'en LCK.
-        split_prestige = league_prestige(split.league)
+        split_base = league_base(league_prestige(split.league))
+        bases: dict[int, float] = {}
         by_player: dict[int, list[dict]] = defaultdict(list)
         for a in appearances:
             row = cls._row(a)
-            raw, row["zs"] = scoring.game_rating(row, reference)
-            a.rating = apply_prestige(raw, league_prestige(a.tournament.league))
+            performance, row["zs"] = scoring.game_rating(row, reference)
+            league = a.tournament.league
+            if league.pk not in bases:
+                bases[league.pk] = league_base(league_prestige(league))
+            a.rating = scoring.game_value(performance, a.win, bases[league.pk])
             row["rating"] = a.rating
             by_player[a.player_id].append(row)
         GameAppearance.objects.bulk_update(appearances, ["rating"], batch_size=500)
@@ -548,7 +552,7 @@ class LeaguepediaImporter:
             agg = scoring.aggregate_appearances(rows)
             agg["player_id"] = player_id
             agg["score"] = agg["rating"] = scoring.split_rating(
-                [r["rating"] for r in rows], settings.GAME_RATING_PRIOR_GAMES, prior_mean=prestige_prior(split_prestige)
+                [r["rating"] for r in rows], settings.GAME_RATING_LEAGUE_GAMES, prior_mean=split_base
             )
             agg["dimensions"] = scoring.dimension_scores([r["zs"] for r in rows])
             stats.append(agg)

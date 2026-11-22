@@ -199,7 +199,7 @@ class ScoringTests(unittest.TestCase):
 
     def test_one_great_game_weighs_less_than_many(self):
         self.assertLess(scoring.split_rating([90]), scoring.split_rating([90] * 20))
-        self.assertEqual(scoring.split_rating([]), 50)
+        self.assertEqual(scoring.split_rating([]), scoring.LEAGUE_BASE)
 
     def test_missing_data_is_ignored(self):
         ref = scoring.reference([row(), row(kills=5)])
@@ -273,7 +273,7 @@ class TeamScoringTests(unittest.TestCase):
         # 2 parties moyennes cette saison, 5 très bonnes avant.
         now_only = scoring.champion_rating([50, 50], 55)
         with_history = scoring.champion_rating([50, 50], 55, history_scores=[80] * 5)
-        self.assertGreater(with_history, now_only + 10)
+        self.assertGreater(with_history, now_only + 4)
         # L'historique compte moins que la forme du moment.
         current = scoring.champion_rating([80] * 5, 55)
         self.assertGreater(current, with_history)
@@ -324,8 +324,9 @@ class PrestigeTests(unittest.TestCase):
         self.assertGreater(default_prestige("LCK"), default_prestige("LEC"))
         self.assertGreater(default_prestige("LEC"), default_prestige("LCS"))
         self.assertGreater(default_prestige("LCS"), default_prestige("LFL"))
-        self.assertLessEqual(default_prestige("LFL"), 0.75)
-        self.assertEqual(default_prestige("XYZ", "Korea", "Secondary"), 0.70)
+        self.assertGreater(default_prestige("LCK"), default_prestige("LPL"))
+        self.assertLessEqual(default_prestige("LFL"), 0.80)
+        self.assertEqual(default_prestige("XYZ", "Korea", "Secondary"), 0.80)
 
     def test_international_competitions_are_not_corrected(self):
         from esport.prestige import default_prestige
@@ -341,19 +342,42 @@ class PrestigeTests(unittest.TestCase):
         from esport.prestige import league_prestige
 
         league = SimpleNamespace(short_name="LFL", region="EMEA", level="Secondary", prestige=None)
-        self.assertEqual(league_prestige(league), 0.72)
-        league.prestige = Decimal("0.80")
         self.assertEqual(league_prestige(league), 0.80)
+        league.prestige = Decimal("0.75")
+        self.assertEqual(league_prestige(league), 0.75)
 
-    def test_the_correction_multiplies_the_final_rating(self):
-        from esport.prestige import apply_prestige, prestige_prior
+    def test_league_averages_are_spaced_like_dpm(self):
+        from esport.prestige import default_prestige, league_base
 
-        games = [72, 65, 70, 58, 80]
-        raw = scoring.split_rating(games, prior_games=0)
-        corrected = scoring.split_rating([apply_prestige(g, 0.72) for g in games], prior_games=0)
-        self.assertAlmostEqual(corrected, raw * 0.72, delta=0.3)
-        self.assertAlmostEqual(scoring.split_rating([], prior_mean=prestige_prior(0.72)), 36, delta=0.1)
-        self.assertEqual(apply_prestige(80, 1.0), 80)
+        def average_card(short):
+            return scoring.overall_rating(scoring.split_rating([], prior_mean=league_base(default_prestige(short))))
+
+        # Le joueur moyen de chaque ligue (dpm.lol 2026 + 15 : 80, 77, 72, 68).
+        self.assertEqual(average_card("LCK"), 80)
+        self.assertAlmostEqual(average_card("LPL"), 77, delta=1)
+        self.assertAlmostEqual(average_card("LEC"), 72, delta=1)
+        self.assertAlmostEqual(average_card("LCS"), 68, delta=1)
+
+    def test_the_same_games_rate_higher_in_a_stronger_league(self):
+        from esport.prestige import league_base
+
+        def rate(prestige):
+            base = league_base(prestige)
+            return scoring.split_rating([scoring.game_value(65, True, base)] * 20, prior_mean=base)
+
+        self.assertGreater(rate(1.0), rate(0.92) + 10)
+
+    def test_winning_and_playing_more_matter(self):
+        base = 46.0  # LEC
+        good_stats_losing = [scoring.game_value(65, i < 5, base) for i in range(11)]
+        good_stats_winning = [scoring.game_value(65, i < 8, base) for i in range(11)]
+        self.assertGreater(scoring.split_rating(good_stats_winning, prior_mean=base),
+                           scoring.split_rating(good_stats_losing, prior_mean=base) + 6)
+        # Peu de parties : la note reste plus près de la moyenne de la ligue.
+        few = scoring.split_rating([scoring.game_value(70, True, base)] * 5, prior_mean=base)
+        many = scoring.split_rating([scoring.game_value(70, True, base)] * 40, prior_mean=base)
+        self.assertLess(few, many)
+        self.assertGreater(few, base)
 
     def test_the_split_prior_is_the_league_average(self):
         self.assertLess(scoring.split_rating([], prior_mean=46), scoring.split_rating([], prior_mean=50))

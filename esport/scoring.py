@@ -3,8 +3,8 @@
 Fonctions pures (sans Django) pour pouvoir les tester facilement.
 
 La note d'un joueur sur un split est calculée **par rapport aux joueurs du même
-rôle** (un support n'a pas le même DPM qu'un mid), puis transformée en
-percentile sur l'ensemble du split. C'est ce percentile qui détermine la rareté.
+rôle** (un support n'a pas le même DPM qu'un mid), puis placée sur l'échelle
+des cartes selon le niveau de la ligue et le résultat de la partie.
 """
 from __future__ import annotations
 
@@ -154,8 +154,8 @@ def aggregate_appearances(appearances: list[dict]) -> dict:
 # moyenne d'un pro **du même rôle**. Pour chaque métrique, on mesure de
 # combien d'écarts-types le joueur est au-dessus ou en dessous de la
 # moyenne de son rôle (sur toutes les parties importées), on pondère selon
-# le rôle, puis on ramène sur 0–100. La note d'un split est la moyenne de
-# ses parties, tirée vers 50 quand il y en a peu (moyenne bayésienne).
+# le rôle, puis on ramène sur 0–100 : c'est la « performance » de la
+# partie. La note de la carte en découle plus bas (game_value).
 
 #: (libellé, plus c'est haut mieux c'est ?)
 METRICS = {
@@ -196,9 +196,6 @@ ROLE_WEIGHTS = {
 }
 DEFAULT_WEIGHTS = ROLE_WEIGHTS["Mid"]
 
-#: Parties « moyennes » (note 50) ajoutées à celles du joueur dans la note
-#: d'un split : 3 parties à 60 pèsent moitié moins que 30 parties à 60.
-PRIOR_GAMES = 3
 #: Un z-score est borné pour qu'une partie folle ne fasse pas toute la note.
 Z_CAP = 3.0
 #: Pente de la courbe z → note (1 écart-type ≈ +19 points).
@@ -293,23 +290,57 @@ def game_rating(row: dict, ref: dict) -> tuple[float, dict]:
     return round(_to_score(z_game), 1), zs
 
 
-#: La moyenne de nombreuses parties varie bien moins qu'une partie seule :
-#: on étire l'écart à 50 pour que les notes de split couvrent 0–100 (sur la
-#: LCK 2026, de ~15 pour le moins bon à ~80 pour le meilleur).
-SPLIT_STRETCH = 2.5
+# --------------------------------------------------------------------------
+# De la note d'une partie à la note de la carte
+# --------------------------------------------------------------------------
+#
+# Calé sur les notes de dpm.lol (226 joueurs de LCK, LPL, LEC et LCS sur le
+# premier split 2026 ; corrélation 0,93) : la note de carte vaut à peu près
+# celle de dpm.lol + 15.
+#
+# Chaque partie vaut : la note du joueur moyen de la ligue (prestige),
+# + GAME_SLOPE × (sa performance − 50), ± WIN_SWING selon la victoire.
+# La note du split est la moyenne de ses parties, avec PRIOR_GAMES parties
+# « moyennes de la ligue » ajoutées : avec peu de parties (équipe éliminée
+# tôt, remplaçant), la note reste près de la moyenne de la ligue.
+
+#: La note (0–100) du joueur moyen d'une ligue de prestige 1 (LCK) : carte 80.
+LEAGUE_BASE = 62.0
+#: Points de note par unité de prestige : LEC (0,92) = 62 − 16 = 46, carte 72.
+PRESTIGE_POINTS = 204.0
+#: Points de note par point de performance au-dessus de 50.
+GAME_SLOPE = 1.55
+#: Une victoire ajoute ceci à la note de la partie, une défaite le retire :
+#: à stats égales, une équipe qui gagne vaut mieux qu'une équipe qui perd.
+WIN_SWING = 25.0
+
+#: Parties « moyennes de la ligue » ajoutées à celles du joueur (réglable
+#: par GAME_RATING_LEAGUE_GAMES).
+PRIOR_GAMES = 8
 
 #: La version du calcul des notes. À augmenter quand il change : au
 #: démarrage suivant, tout est recalculé (recompute_cards --si-besoin).
 #: 2 : prestige des ligues. 3 : prestige plus marqué, internationaux sans correction.
 #: 4 : données absentes ignorées (plus de faux zéros), référence par année.
-SCORING_VERSION = 4
+#: 5 : calage sur dpm.lol : écart entre ligues, résultats de l'équipe, peu de parties.
+SCORING_VERSION = 5
 
 
-def split_rating(game_scores: list[float], prior_games: int = PRIOR_GAMES, prior_mean: float = 50.0) -> float:
-    """Moyenne bayésienne des parties (tirée vers prior_mean — le joueur
-    moyen de la ligue — quand il y en a peu), étirée autour de 50."""
-    mean = (sum(game_scores) + prior_mean * prior_games) / (len(game_scores) + prior_games)
-    return round(max(0.0, min(100.0, 50 + SPLIT_STRETCH * (mean - 50))), 1)
+def game_value(performance: float, win: bool, league_base_value: float) -> float:
+    """La valeur d'une partie sur l'échelle des cartes (pas bornée : c'est
+    la moyenne qui l'est)."""
+    swing = WIN_SWING if win else -WIN_SWING
+    return round(league_base_value + GAME_SLOPE * (performance - 50) + swing, 1)
+
+
+def _clamp(value: float) -> float:
+    return round(max(0.0, min(100.0, value)), 1)
+
+
+def split_rating(game_values: list[float], prior_games: int = PRIOR_GAMES, prior_mean: float = LEAGUE_BASE) -> float:
+    """Moyenne des parties, tirée vers prior_mean (le joueur moyen de la
+    ligue) quand il y en a peu, bornée à 0–100."""
+    return _clamp((sum(game_values) + prior_mean * prior_games) / (len(game_values) + prior_games))
 
 
 def dimension_scores(game_zs: list[dict]) -> dict:
@@ -343,7 +374,7 @@ def rank_percentiles(stats: list[dict], key: str = "rating") -> list[dict]:
 
 def overall_rating(rating: float) -> int:
     """Note affichée sur la carte, de 50 à 99, d'après la note 0–100.
-    Un pro moyen (50) a 75 ; un 90 a 94."""
+    Le joueur moyen de LCK (62) a 80, celui de LEC (46) 73 ; un 90 a 94."""
     return max(50, min(99, round(50 + 0.49 * rating)))
 
 
@@ -379,8 +410,7 @@ def champion_rating(
     history_scores = history_scores or []
     total = sum(game_scores) + history_weight * sum(history_scores) + player_mean * prior_games
     weight = len(game_scores) + history_weight * len(history_scores) + prior_games
-    mean = total / weight
-    return round(max(0.0, min(100.0, 50 + SPLIT_STRETCH * (mean - 50))), 1)
+    return _clamp(total / weight)
 
 
 def unplayed_rating(player_rating: float) -> float:
