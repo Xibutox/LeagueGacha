@@ -86,25 +86,36 @@
   </div>
 
   {% if board.turn and board.turn.team == "user" %}
-    <form method="post" action="{% url 'cards:tournament_draft' series.pk %}" class="draft-turn">{% csrf_token %}
+    <form method="post" action="{% url 'cards:tournament_draft' series.pk %}" class="draft-turn" data-draft data-kind="{{ board.turn.type }}">{% csrf_token %}
       <p class="draft-step">Étape {{ board.step }} sur {{ board.steps }} : <b>{% if board.turn.type == "ban" %}à toi de bannir un champion{% else %}à toi de choisir un champion pour un de tes joueurs{% endif %}</b></p>
-      {% if board.turn.type == "ban" %}
-        <select name="choice" required aria-label="Champion à bannir">
-          <option value="">— champion à bannir —</option>
-          {% for o in board.ban_options %}<option value="{{ o.id }}">{{ o.name }}{% if o.played %} · joué par {{ o.played }}{% endif %}</option>{% endfor %}
-        </select>
-        <button class="btn btn-gold" type="submit">Bannir</button>
-      {% else %}
-        <select name="choice" required aria-label="Champion et joueur">
-          <option value="">— champion —</option>
-          {% for g in board.pick_groups %}
-            <optgroup label="{{ g.role }} · {{ g.card.player.ign }}">
-              {% for o in g.options %}<option value="{{ o.value }}">{{ o.name }} · {{ o.rating }}{% if o.played %} · {{ o.games }} partie{{ o.games|pluralize }}{% else %} · jamais joué{% endif %}</option>{% endfor %}
-            </optgroup>
+      {% if board.turn.type == "pick" %}
+        <fieldset class="draft-roles">
+          <legend>Pour qui ?</legend>
+          {% for role, card in board.pick_roles %}
+            <label class="draft-role"><input type="radio" name="role" value="{{ role }}" {% if forloop.first %}checked{% endif %}>
+              <span class="role role-{{ role|lower }}">{{ role }}</span> {{ card.player.ign }}</label>
           {% endfor %}
-        </select>
-        <button class="btn btn-gold" type="submit">Choisir</button>
+        </fieldset>
       {% endif %}
+      <div class="draft-tools">
+        <input type="search" placeholder="Chercher un champion" aria-label="Chercher un champion" data-search>
+        {% if board.turn.type == "pick" %}<label class="small"><input type="checkbox" data-played> Seulement ses champions</label>
+        {% else %}<label class="small"><input type="checkbox" data-played> Seulement ceux joués en face</label>{% endif %}
+      </div>
+      <div class="champ-grid" role="radiogroup" aria-label="Champions">
+        {% for t in board.tiles %}
+          <label class="champ-tile{% if t.played %} is-played{% endif %}" data-name="{{ t.champion.name|lower }}"{% if t.ratings %} data-ratings="{{ t.ratings }}"{% endif %}{% if t.title %} title="{{ t.title }}"{% endif %}>
+            <input type="radio" name="champion" value="{{ t.champion.pk }}" required>
+            <img src="{{ t.champion.icon_url }}" alt="" loading="lazy" width="56" height="56">
+            <span class="ct-name">{{ t.champion.name }}</span>
+            <span class="ct-note">{% if board.turn.type == "ban" %}{% if t.note %}×{{ t.note }}{% endif %}{% endif %}</span>
+          </label>
+        {% endfor %}
+      </div>
+      <div class="draft-confirm">
+        <span class="muted" data-chosen>Choisis un champion dans la grille.</span>
+        <button class="btn btn-gold" type="submit" disabled data-submit>{% if board.turn.type == "ban" %}Bannir{% else %}Choisir{% endif %}</button>
+      </div>
     </form>
   {% endif %}
 {% endif %}
@@ -138,3 +149,4 @@
   {% endfor %}
 {% endif %}
 {% endblock %}
+{% block scripts %}{% load static %}<script src="{% static 'js/draft.js' %}?v=16" defer></script>{% endblock %}

@@ -589,3 +589,35 @@ a.gift { color: inherit; text-decoration: none; }
   .draft-slot { grid-template-columns: 62px 1fr; }
   .draft-champ { grid-column: 2; }
 }
+
+/* La grille de champions de la draft. */
+.draft-turn { display: block; }
+.draft-roles { display: flex; flex-wrap: wrap; gap: 6px; border: 0; padding: 0; margin: 10px 0; }
+.draft-roles legend { font-size: .8rem; color: var(--muted, #8a96ad); margin-bottom: 6px; }
+.draft-role { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; background: rgba(255,255,255,.04); cursor: pointer; }
+.draft-role input { accent-color: var(--gold, #e2b35a); }
+.draft-role:has(input:checked) { outline: 2px solid var(--gold, #e2b35a); }
+.draft-tools { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin: 10px 0; }
+.draft-tools input[type=search] { flex: 1; min-width: 200px; max-width: 320px; }
+.champ-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px;
+  max-height: 420px; overflow-y: auto; padding: 4px; background: rgba(0,0,0,.18); }
+.champ-tile { position: relative; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 2px 5px;
+  cursor: pointer; background: rgba(255,255,255,.03); border: 1px solid transparent; }
+.champ-tile[hidden] { display: none; }
+.champ-tile input { position: absolute; opacity: 0; pointer-events: none; }
+.champ-tile img { width: 52px; height: 52px; object-fit: cover; filter: saturate(.55) brightness(.8); transition: filter .15s; }
+.champ-tile.is-played img, .champ-tile:hover img { filter: none; }
+.champ-tile .ct-name { font-size: .68rem; line-height: 1.1; text-align: center; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.champ-tile .ct-note { position: absolute; top: 4px; right: 4px; padding: 0 4px; font: 700 .7rem/1.3 var(--display);
+  background: rgba(5,9,18,.8); color: var(--muted, #8a96ad); }
+.champ-tile.is-played .ct-note { color: var(--gold, #e2b35a); }
+.champ-tile .ct-note:empty { display: none; }
+.champ-tile:hover { border-color: rgba(255,255,255,.2); }
+.champ-tile.is-selected { border-color: var(--gold, #e2b35a); background: rgba(226,179,90,.14); }
+.champ-tile:focus-within { outline: 2px solid var(--gold, #e2b35a); }
+.draft-confirm { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 12px; flex-wrap: wrap; }
+.draft-turn[data-kind=ban] .champ-tile.is-selected img { filter: grayscale(1); }
+@media (max-width: 640px) {
+  .champ-grid { grid-template-columns: repeat(auto-fill, minmax(62px, 1fr)); max-height: 360px; }
+  .champ-tile img { width: 44px; height: 44px; }
+}

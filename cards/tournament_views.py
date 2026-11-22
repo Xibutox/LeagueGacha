@@ -120,6 +120,7 @@ def _draft_board(series: TournamentSeries) -> dict:
     if turn and turn["team"] == "user" and turn["type"] == "ban":
         # Pour bannir : ce que les joueurs d'en face ont joué pendant le tournoi.
         pools: dict[str, list[str]] = {}
+        counts: dict[str, int] = {}
         rows = (
             GameAppearance.objects.filter(tournament__split=series.run.tournament.split_id,
                                           player__in=[c.player_id for c in theirs.values()])
@@ -127,29 +128,29 @@ def _draft_board(series: TournamentSeries) -> dict:
         )
         for r in rows:
             pools.setdefault(r["champion"], []).append(f"{r['player__ign']} ×{r['n']}")
-        board["ban_options"] = sorted(
-            ({"id": c.pk, "name": c.name, "played": ", ".join(pools.get(c.name, []))} for c in free),
-            key=lambda o: (not o["played"], o["name"]),
+            counts[r["champion"]] = counts.get(r["champion"], 0) + r["n"]
+        board["tiles"] = sorted(
+            ({"champion": c, "note": counts.get(c.name, 0), "title": "Joué par " + ", ".join(pools[c.name])
+              if c.name in pools else "", "played": c.name in pools} for c in free),
+            key=lambda t: (-t["note"], t["champion"].name),
         )
     elif turn and turn["team"] == "user":
-        groups = []
-        for role in ROLES:
-            if role in state["picks"]["user"]:
-                continue
-            card = mine[role]
-            player_rating = card.stats.score if card.stats else 50.0
-            played = {a.champion_id: a for a in CardChampion.objects.filter(card=card)}
-            options = []
-            for c in free:
-                a = played.get(c.pk)
-                options.append({
-                    "value": f"{role}|{c.pk}", "name": c.name, "played": a is not None,
-                    "rating": round(a.rating if a else game.unplayed_rating(player_rating)),
-                    "games": (a.games + a.history_games) if a else 0,
-                })
-            options.sort(key=lambda o: (not o["played"], -o["rating"], o["name"]))
-            groups.append({"role": role, "card": card, "options": options})
-        board["pick_groups"] = groups
+        roles = [r for r in ROLES if r not in state["picks"]["user"]]
+        played = {}
+        for a in CardChampion.objects.filter(card__in=[mine[r] for r in roles]):
+            played[(a.card_id, a.champion_id)] = a
+        tiles = []
+        for c in free:
+            per_role = []
+            for role in roles:
+                card = mine[role]
+                a = played.get((card.pk, c.pk))
+                player_rating = card.stats.score if card.stats else 50.0
+                rating = round(a.rating if a else game.unplayed_rating(player_rating))
+                per_role.append(f"{role}:{rating}:{(a.games + a.history_games) if a else 0}:{1 if a else 0}")
+            tiles.append({"champion": c, "ratings": " ".join(per_role)})
+        board["tiles"] = tiles
+        board["pick_roles"] = [(r, mine[r]) for r in roles]
     return board
 
 
@@ -170,6 +171,8 @@ def tournament_draft(request, pk):
     series = _series(request, pk)
     choice = request.POST.get("choice", "")
     role, _, champion = choice.partition("|") if "|" in choice else (None, "", choice)
+    champion = request.POST.get("champion") or champion
+    role = request.POST.get("role") or role
     try:
         played = game.draft_action(request.user, series, champion, role=role)
     except GameError as exc:

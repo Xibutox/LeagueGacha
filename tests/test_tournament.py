@@ -215,9 +215,9 @@ def test_the_tournament_pages(client, tourney, player):
         free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
         client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": free})
     html = client.get(response["Location"]).content.decode()
-    assert "à toi de choisir" in html and "<optgroup" in html
+    assert "à toi de choisir" in html and 'class="champ-grid"' in html and 'name="role"' in html
     free = next(c for c in Champion.objects.values_list("pk", flat=True) if c not in state["taken"])
-    client.post(reverse("cards:tournament_draft", args=[series.pk]), {"choice": f"Top|{free}"})
+    client.post(reverse("cards:tournament_draft", args=[series.pk]), {"champion": free, "role": "Top"})
     series.refresh_from_db()
     assert game.draft_state(series)["picks"]["user"]["Top"] == free
     assert "Reprendre ton Bo5" in client.get(reverse("cards:tournament")).content.decode()
