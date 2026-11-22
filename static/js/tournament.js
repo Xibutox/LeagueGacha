@@ -49,6 +49,17 @@
   }
 
   function plural(n, word) { return n + " " + word + (n > 1 ? "s" : ""); }
+  function signed(n) { return (n > 0 ? "+" : "") + n; }
+  // Le détail des points de draft d'un poste (survol).
+  function draftTitle(mine, theirs) {
+    function one(s) {
+      var d = s.draft;
+      if (!d) return s.champion_name + " : " + signed(s.bonus);
+      return s.champion_name + " : " + signed(s.bonus) + " pts (bilan pro " + d.rate + " %, synergies " +
+        signed(d.synergy) + ", face-à-face " + signed(d.matchup) + ")";
+    }
+    return one(mine) + "\n" + one(theirs);
+  }
 
   function format(ms) {
     var s = Math.max(0, Math.round(ms / 1000));
@@ -474,7 +485,7 @@
     }
     return h("div", {}, [
       h("div", { class: "strap", id: "draft" }, [h("h2", { text: "Partie " + number + " : draft" })]),
-      h("p", { class: "muted", text: "Draft de tournoi à tour de rôle : 3 bans, 3 picks, puis 2 bans et 2 picks de chaque côté. Fearless : un champion joué dans ce Bo5 ne revient plus, pour personne. Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté, le bilan du champion face à celui d'en face et la particularité de la partie." }),
+      h("p", { class: "muted", text: "Draft de tournoi à tour de rôle : 3 bans, 3 picks, puis 2 bans et 2 picks de chaque côté. Fearless : un champion joué dans ce Bo5 ne revient plus, pour personne. Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté, les points de draft (bilan pro du champion à son poste, ses synergies avec tes autres picks et ses face-à-face avec les cinq champions d'en face) et la particularité de la partie." }),
       specialPanel(d.special),
       fearless.length ? h("p", { class: "fearless" }, [h("b", { text: "Déjà joués : " })].concat(
         fearless.map(function (id) { return h("span", { class: "banned", text: champ(id).name }); }))) : null,
@@ -496,7 +507,7 @@
           h("span", { class: "game-total" }, [h("b", { text: String(g.user_score) }), " – ", h("b", { text: String(g.opponent_score) })]),
         ]),
         h("table", { class: "game-table" }, [
-          h("thead", {}, [h("tr", {}, ["Toi", "Score", "Face-à-face", "Score", state.team].map(function (t) { return h("th", { scope: "col", text: t }); }))]),
+          h("thead", {}, [h("tr", {}, ["Toi", "Score", "Draft", "Score", state.team].map(function (t) { return h("th", { scope: "col", text: t }); }))]),
           h("tbody", {}, g.rows.map(function (r) {
             var mine = r.user, theirs = r.opponent;
             return h("tr", {}, [
@@ -504,16 +515,21 @@
               h("td", { class: "num" }, [String(mine.score), mine.special ? h("small", {
                 class: mine.special > 0 ? "up" : "down", title: "Particularité de la partie",
                 text: (mine.special > 0 ? "+" : "") + mine.special + " forme" }) : null]),
-              h("td", { class: "face" }, [
-                h("span", { class: mine.bonus > 0 ? "up" : (mine.bonus < 0 ? "down" : ""), text: mine.matchup + " %" }),
-                h("small", { class: "muted", text: mine.matchup_games ? plural(mine.matchup_games, "partie") : "jamais vu" }),
+              h("td", { class: "face", title: draftTitle(mine, theirs) }, [
+                h("span", { class: mine.bonus > theirs.bonus ? "up" : (mine.bonus < theirs.bonus ? "down" : "") },
+                  [signed(mine.bonus) + " / " + signed(theirs.bonus)]),
+                h("small", { class: "muted", text: "couloir " + mine.matchup + " % · " +
+                  (mine.matchup_games ? plural(mine.matchup_games, "partie") : "jamais vu") }),
               ]),
               h("td", { class: "num" }, [String(theirs.score), theirs.special ? h("small", {
                 class: theirs.special > 0 ? "up" : "down", title: "Particularité de la partie",
                 text: (theirs.special > 0 ? "+" : "") + theirs.special + " forme" }) : null]),
               h("td", {}, [h("b", { text: theirs.champion_name }), h("small", { class: "muted", text: theirs.player })]),
             ]);
-          }).concat([h("tr", { class: "coherence" }, [
+          }).concat(g.user_draft != null ? [h("tr", { class: "coherence" }, [
+            h("td", { text: "Chances de la draft" }), h("td", { class: "num", text: g.user_draft + " %" }),
+            h("td"), h("td", { class: "num", text: g.opponent_draft + " %" }), h("td"),
+          ])] : []).concat([h("tr", { class: "coherence" }, [
             h("td", { text: "Cohérence de la compo" }), h("td", { class: "num", text: String(g.user_coherence) }),
             h("td"), h("td", { class: "num", text: String(g.opponent_coherence) }), h("td"),
           ])])),

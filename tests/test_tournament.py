@@ -168,16 +168,20 @@ def test_the_higher_score_wins_and_matchups_count(tourney, player, monkeypatch):
     assert plain["won"] == ((plain["user_score"], plain["user_coherence"])
                             > (plain["opponent_score"], plain["opponent_coherence"]))
 
-    monkeypatch.setattr(game, "matchup", lambda role, a, b: {"games": 50, "wins": 50, "rate": 0.9})
-    favoured = game.evaluate_game(series, picks, theirs)  # noqa
-    assert favoured["user"]["Mid"]["bonus"] == 16.0
-    assert favoured["user_score"] > plain["user_score"] and favoured["opponent_score"] < plain["opponent_score"]
+    mine = {plain["user"][r]["champion_name"] for r in ROLES}
+    real = game.draftstats.base_rate
+    monkeypatch.setattr(game.draftstats, "base_rate",
+                        lambda name, role, year, table=None: 0.7 if name in mine else real(name, role, year, table))
+    favoured = game.evaluate_game(series, picks, theirs)
+    assert favoured["user"]["Mid"]["bonus"] > plain["user"]["Mid"]["bonus"]
+    assert favoured["user_score"] > plain["user_score"]
+    assert favoured["user_draft"] > plain["user_draft"]
 
 
-def test_the_matchup_comes_from_real_games(msi):
-    face = game.matchup("Top", "Ahri", "Azir")
-    assert 0 <= face["games"] and 0 < face["rate"] < 1
-    assert game.matchup("Top", "Ahri", "Ahri")["rate"] == 0.5
+def test_the_draft_rating_comes_from_real_games(msi):
+    result = game.draftstats.evaluate({"Top": "Ahri", "Mid": "Azir"}, {"Top": "Azir", "Mid": "Ahri"}, 2025)
+    assert 0 < result["rate_a"] < 1
+    assert result["a"]["Top"]["lane_games"] >= 0 and 0 < result["a"]["Top"]["lane_rate"] < 1
 
 
 def test_the_opponent_picks_what_its_players_played(tourney, player):

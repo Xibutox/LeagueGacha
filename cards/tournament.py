@@ -36,6 +36,7 @@ from esport.catalog import ewc_q, riot_events_q, side_events_q
 from esport.models import Champion, GameAppearance, League, Split, Team
 from esport.scoring import composition_coherence, composition_score, slot_score, unplayed_rating
 
+from . import draftstats
 from .models import (
     ROLES,
     Card,
@@ -51,11 +52,6 @@ from .services import GameError, add_copies, best_rarities
 #: modifiable dans la gestion.
 DEFAULT_DAYS = getattr(settings, "GAME_TOURNAMENT_DAYS", 7)
 
-#: Le face-à-face : bilan lissé vers 50 % (comme MATCHUP_PRIOR parties
-#: nulles en plus), puis converti en points de poste : 60 % de victoires
-#: donnent +MATCHUP_WEIGHT/10 points, et l'adversaire autant en moins.
-MATCHUP_PRIOR = 10
-MATCHUP_WEIGHT = 40
 
 
 # --------------------------------------------------------------- Les tournois
@@ -274,26 +270,23 @@ def set_lineup(user, series: TournamentSeries, picks: dict) -> TournamentSeries:
 
 
 # --------------------------------------------------------------- Une partie
-def matchup(role: str, champion: str, opposite: str) -> dict:
-    """Le bilan de `champion` face à `opposite` au même poste, dans toutes
-    les parties importées : {"games", "wins", "rate" (lissé, 0–1)}."""
-    if champion == opposite:
-        return {"games": 0, "wins": 0, "rate": 0.5}
-    key = "matchup:" + hashlib.md5(f"{role}|{champion}|{opposite}".encode()).hexdigest()
-    found = cache.get(key)
-    if found is None:
-        theirs = GameAppearance.objects.filter(role=role, champion=opposite).values("game_id")
-        rows = GameAppearance.objects.filter(role=role, champion=champion, game_id__in=theirs)
-        games = rows.order_by().values("game_id").distinct().count()
-        wins = rows.filter(win=True).order_by().values("game_id").distinct().count()
-        found = {"games": games, "wins": wins}
-        cache.set(key, found, 24 * 3600)
-    rate = (found["wins"] + MATCHUP_PRIOR / 2) / (found["games"] + MATCHUP_PRIOR)
-    return {**found, "rate": rate}
-
-
-def matchup_points(rate: float) -> float:
-    return round((rate - 0.5) * MATCHUP_WEIGHT, 1)
+def apply_draft(a: dict, b: dict, year: int | None) -> dict:
+    """Note la draft des deux côtés (cards.draftstats, méthode DraftGap :
+    bilans de base, synergies, les 25 face-à-face) et ajoute à chaque poste
+    ses points de draft ("bonus"), le face-à-face de son couloir
+    ("matchup" %, "matchup_games") et le détail ("draft")."""
+    result = draftstats.evaluate({r: a[r]["champion_name"] for r in ROLES},
+                                 {r: b[r]["champion_name"] for r in ROLES}, year)
+    for slots, detail in ((a, result["a"]), (b, result["b"])):
+        for role in ROLES:
+            d = detail[role]
+            slots[role].update(
+                bonus=draftstats.slot_points(d),
+                matchup=round(d["lane_rate"] * 100), matchup_games=d["lane_games"],
+                draft={"rate": round(d["rate"] * 100, 1), "synergy": round(d["synergy"]),
+                       "matchup": round(d["matchup"])},
+            )
+    return result
 
 
 #: L'ordre d'une draft de tournoi : (côté, action). 3 bans chacun, 3 picks
@@ -668,15 +661,12 @@ def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent
         {r: champions[int(opponent_picks[r])] for r in ROLES},
         {r: series.opponent_rarity for r in ROLES},
     )
+    draft = apply_draft(user, them, series.run.tournament.split.year)
     for role in ROLES:
-        face = matchup(role, user[role]["champion_name"], them[role]["champion_name"])
-        points = matchup_points(face["rate"])
         mine = special_points(special, "user", role, user[role]["champion"])
         theirs = special_points(special, "opponent", role, them[role]["champion"])
-        user[role].update(matchup=round(face["rate"] * 100), matchup_games=face["games"], bonus=points,
-                          special=mine, score=round(user[role]["base"] + points + mine, 1))
-        them[role].update(matchup=100 - round(face["rate"] * 100), matchup_games=face["games"], bonus=-points,
-                          special=theirs, score=round(them[role]["base"] - points + theirs, 1))
+        user[role].update(special=mine, score=round(user[role]["base"] + user[role]["bonus"] + mine, 1))
+        them[role].update(special=theirs, score=round(them[role]["base"] + them[role]["bonus"] + theirs, 1))
 
     def total(side):
         names = [side[r]["champion_name"] for r in ROLES]
@@ -692,6 +682,7 @@ def evaluate_game(series: TournamentSeries, user_picks: dict[str, int], opponent
         "user": {r: user[r] for r in ROLES}, "opponent": {r: them[r] for r in ROLES},
         "user_score": user_score, "opponent_score": their_score,
         "user_coherence": user_coherence, "opponent_coherence": their_coherence,
+        "user_draft": round(draft["rate_a"] * 100), "opponent_draft": round(draft["rate_b"] * 100),
         "won": won,
     }
 

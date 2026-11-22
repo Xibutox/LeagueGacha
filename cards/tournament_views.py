@@ -112,6 +112,7 @@ def state_payload(series: TournamentSeries) -> dict:
                 "number": g["number"], "won": g["won"], "side": g.get("side"),
                 "user_score": g["user_score"], "opponent_score": g["opponent_score"],
                 "user_coherence": g["user_coherence"], "opponent_coherence": g["opponent_coherence"],
+                "user_draft": g.get("user_draft"), "opponent_draft": g.get("opponent_draft"),
                 "bans": g.get("bans"), "special": g.get("special"), "actions": g.get("actions", []),
                 "rows": [{"role": r, "user": g["user"][r], "opponent": g["opponent"][r]} for r in ROLES],
             }

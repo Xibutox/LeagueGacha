@@ -25,10 +25,10 @@ from django.utils import timezone
 from esport.models import Champion
 from esport.scoring import composition_coherence, composition_score, slot_score, unplayed_rating
 
-from . import weekly
+from . import draftstats, weekly
 from .models import ROLES, Card, CardChampion, Duel, Rarity
 from .services import GameError, best_rarities, copies_by_card
-from .tournament import DRAFT_ORDER, _effects, champion_ids_by_name, matchup, matchup_points
+from .tournament import DRAFT_ORDER, _effects, apply_draft, champion_ids_by_name
 
 INVITE_HOURS = 24
 LINEUP_SECONDS = 120
@@ -430,15 +430,12 @@ def evaluate(duel: Duel, picks_a: dict, picks_b: dict, special: dict | None = No
     rarities = Rarity.objects.in_bulk([int(r) for r in list(duel.rarities_a.values()) + list(duel.rarities_b.values())])
     a = _side_slots(duel, "a", picks_a, champions, cards, rarities)
     b = _side_slots(duel, "b", picks_b, champions, cards, rarities)
+    draft = apply_draft(a, b, draftstats.latest_year())
     for role in ROLES:
-        face = matchup(role, a[role]["champion_name"], b[role]["champion_name"])
-        points = matchup_points(face["rate"])
         mine = special_points(special, "a", role, a[role]["champion"])
         theirs = special_points(special, "b", role, b[role]["champion"])
-        a[role].update(matchup=round(face["rate"] * 100), matchup_games=face["games"], bonus=points,
-                       special=mine, score=round(a[role]["base"] + points + mine, 1))
-        b[role].update(matchup=100 - round(face["rate"] * 100), matchup_games=face["games"], bonus=-points,
-                       special=theirs, score=round(b[role]["base"] - points + theirs, 1))
+        a[role].update(special=mine, score=round(a[role]["base"] + a[role]["bonus"] + mine, 1))
+        b[role].update(special=theirs, score=round(b[role]["base"] + b[role]["bonus"] + theirs, 1))
 
     def total(slots):
         names = [slots[r]["champion_name"] for r in ROLES]
@@ -458,7 +455,7 @@ def evaluate(duel: Duel, picks_a: dict, picks_b: dict, special: dict | None = No
     else:
         winner = "a" if key_a > key_b else "b"
     return {"a": a, "b": b, "score_a": score_a, "score_b": score_b, "coherence_a": coh_a, "coherence_b": coh_b,
-            "winner": winner}
+            "draft_a": round(draft["rate_a"] * 100), "draft_b": round(draft["rate_b"] * 100), "winner": winner}
 
 
 def _play_game(duel: Duel, now) -> None:

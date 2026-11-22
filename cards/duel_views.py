@@ -146,6 +146,7 @@ def state_payload(duel: Duel, user) -> dict:
                 "number": g["number"], "won": g["winner"] == me, "side": "blue" if g["blue"] == me else "red",
                 "user_score": g[f"score_{me}"], "opponent_score": g[f"score_{them}"],
                 "user_coherence": g[f"coherence_{me}"], "opponent_coherence": g[f"coherence_{them}"],
+                "user_draft": g.get(f"draft_{me}"), "opponent_draft": g.get(f"draft_{them}"),
                 "bans": {"user": g["bans"][me], "opponent": g["bans"][them]},
                 "special": _flip_special(g.get("special"), me),
                 "actions": [dict(a, team=_team(a["team"], me)) for a in g.get("actions", [])],
