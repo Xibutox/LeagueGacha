@@ -6,9 +6,11 @@
   <title>{% block title %}LeagueGacha{% endblock %}</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap">
-  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=10">
-  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=10">
+  {# Les polices ne bloquent pas l'affichage : la page s'affiche tout de suite, les polices suivent. #}
+  <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap"></noscript>
+  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=11">
+  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=11">
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -55,7 +57,7 @@
     Données <a href="https://lol.fandom.com" target="_blank" rel="noopener">Leaguepedia</a> (CC BY-SA) et Data Dragon.
     Projet de fan, non affilié à Riot Games.{% if app_version %} · <span class="version">{{ app_version }}</span>{% endif %}
   </footer>
-  <script src="{% static 'js/countdown.js' %}?v=10" defer></script>
+  <script src="{% static 'js/countdown.js' %}?v=11" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

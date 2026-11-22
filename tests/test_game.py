@@ -1041,3 +1041,32 @@ def test_after_a_portal_booster_the_next_one_comes_from_the_portal(client, porta
     response = client.post(reverse("cards:open_portal", args=[portal.pk]))
     html = client.get(response["Location"]).content.decode()
     assert "Ouvrir un autre" not in html and "Prochain booster du portail dans" in html
+
+
+def test_the_booster_contents_are_cached_and_refreshed_on_change(booster):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    from cards import catalog
+
+    ids = catalog.pool_ids(booster)
+    assert len(ids) == Card.objects.count()
+    with CaptureQueriesContext(connection) as ctx:
+        assert catalog.pool_ids(booster) == ids
+    assert len(ctx.captured_queries) == 0  # servi par le cache
+
+    card = Card.objects.get(pk=ids[0])
+    card.is_active = False
+    card.save()
+    assert card.pk not in catalog.pool_ids(booster)
+
+
+def test_the_collection_is_paginated(client, split, bob, monkeypatch):
+    from cards import views
+
+    monkeypatch.setattr(views, "COLLECTION_PAGE_SIZE", 4)
+    client.force_login(bob)
+    first = client.get(reverse("cards:collection"), {"role": ""})
+    assert len(first.context["rows"]) == 4 and first.context["page"].paginator.num_pages == 3
+    assert "page=2" in first.content.decode() and "role=" in first.context["query"]
+    assert len(client.get(reverse("cards:collection"), {"page": 3}).context["rows"]) == 2

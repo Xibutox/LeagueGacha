@@ -61,4 +61,11 @@
     <p class="muted">Aucun joueur ne correspond à ces filtres.</p>
   {% endfor %}
 </div>
+{% if page.paginator.num_pages > 1 %}
+<nav class="pager" aria-label="Pages de la collection">
+  {% if page.has_previous %}<a class="btn btn-small btn-ghost" href="?{% if query %}{{ query }}&amp;{% endif %}page={{ page.previous_page_number }}">Précédente</a>{% endif %}
+  <span class="muted">Page {{ page.number }} sur {{ page.paginator.num_pages }} · {{ page.paginator.count }} joueur{{ page.paginator.count|pluralize }}</span>
+  {% if page.has_next %}<a class="btn btn-small btn-gold" href="?{% if query %}{{ query }}&amp;{% endif %}page={{ page.next_page_number }}">Suivante</a>{% endif %}
+</nav>
+{% endif %}
 {% endblock %}

@@ -35,6 +35,9 @@
 		header Cache-Control "public, max-age=86400"
 		file_server
 	}
+	handle /ws/* {
+		reverse_proxy ws:8000
+	}
 	handle {
 		reverse_proxy web:8000
 	}

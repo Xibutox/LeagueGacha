@@ -84,3 +84,13 @@ def split(db):
     LeaguepediaImporter.compute_split_stats(split)
     generate_cards(split)
     return split
+
+
+@pytest.fixture(autouse=True)
+def _fresh_cache():
+    """Chaque test repart d'un cache vide (catalogue des boosters, sessions)."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
+    cache.clear()

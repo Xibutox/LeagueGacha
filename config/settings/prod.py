@@ -28,6 +28,9 @@ DATABASES["default"]["CONN_MAX_AGE"] = env_int("DJANGO_CONN_MAX_AGE", 60)
 
 REDIS_URL = env_required("REDIS_URL")
 CHANNEL_LAYERS, CACHES = redis_backends(REDIS_URL)
+# Les sessions lues dans Redis (écrites aussi en base) : une requête SQL de
+# moins par page.
+SESSION_ENGINE = "django.contrib.sessions.backends.cached_db"
 CELERY_BROKER_URL = env("CELERY_BROKER_URL", REDIS_URL)
 
 STORAGES = {

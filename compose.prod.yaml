@@ -82,7 +82,20 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # Les pages : Gunicorn, plusieurs processus en parallèle (WEB_WORKERS,
+  # 3 par défaut : de quoi servir plusieurs joueurs à la fois sur un Pi 4).
   web:
+    <<: *app
+    command: >-
+      gunicorn config.wsgi:application --bind 0.0.0.0:8000
+      --workers ${WEB_WORKERS:-3} --threads 2 --timeout 120
+      --forwarded-allow-ips "*" --max-requests 2000 --max-requests-jitter 200
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Les WebSockets de la gestion (suivi des imports en direct) : Daphne.
+  ws:
     <<: *app
     depends_on:
       migrate:
@@ -114,6 +127,7 @@ services:
       - caddy-config:/config
     depends_on:
       - web
+      - ws
     security_opt:
       - no-new-privileges:true
 

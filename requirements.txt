@@ -3,6 +3,8 @@
 #   pip install "./django-generic[export,events,tasks,postgres]" -r requirements.txt
 requests>=2.32
 Pillow>=11.0
+# Les pages du jeu en production : plusieurs processus (Daphne n'en a qu'un).
+gunicorn>=23.0
 
 # Tests
 pytest>=8.0

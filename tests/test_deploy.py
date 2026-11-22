@@ -66,3 +66,13 @@ def test_the_server_scripts_are_executable_and_unix():
     for script in (ROOT / "deploy" / "raspberry").glob("*.sh"):
         assert script.stat().st_mode & 0o111, script.name
         assert b"\r\n" not in script.read_bytes(), script.name
+
+
+def test_pages_get_several_processes_and_websockets_their_own_service():
+    services = compose()["services"]
+    assert services["web"]["command"].startswith("gunicorn config.wsgi:application")
+    assert "--workers" in services["web"]["command"]
+    assert "command" not in services["ws"]  # Daphne, la commande de l'image
+    caddy = (ROOT / "deploy" / "Caddyfile").read_text(encoding="utf-8")
+    assert "handle /ws/* {\n\t\treverse_proxy ws:8000" in caddy
+    assert "gunicorn" in (ROOT / "requirements.txt").read_text(encoding="utf-8")

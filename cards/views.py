@@ -5,6 +5,7 @@ from django.contrib import messages
 from django.contrib.auth import login
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.forms import UserCreationForm
+from django.core.paginator import Paginator
 from django.db.models import Count, Prefetch, Q
 from django.http import JsonResponse
 from django.shortcuts import get_object_or_404, redirect, render
@@ -16,6 +17,7 @@ from esport.models import Champion, Split
 from esport.scoring import COHERENCE_WEIGHT, DIMENSIONS, SLOT_PLAYER_WEIGHT, UNPLAYED_PENALTY
 
 from .models import COMPOSITIONS, ROLES, Booster, Card, CardChampion, PackOpening, Rarity, Roster, UserCard
+from . import catalog
 from .services import (
     booster_showcase,
     choose_exchange,
@@ -68,7 +70,7 @@ def _with_status(user, boosters):
 def home(request):
     boosters = [
         b for b in Booster.objects.filter(is_active=True).select_related("guaranteed_rarity").prefetch_related("leagues")
-        if b.card_pool().exists()
+        if catalog.has_cards(b)
     ]
     boosters = _with_status(request.user, boosters)
     for booster in boosters:
@@ -79,7 +81,17 @@ def home(request):
         portal.showcase = [] if portal.booster.image else booster_showcase(portal.booster)
         if request.user.is_authenticated:
             portal.status = portal_status(request.user, portal)
-    context = {"boosters": boosters, "portals": portals, "rarities": Rarity.objects.all()}
+    rarities = list(Rarity.objects.all())
+    context = {
+        "boosters": boosters,
+        "portals": portals,
+        "rarities": rarities,
+        "example_rating": EXAMPLE_RATING,
+        "rarity_rows": [
+            {"rarity": r, "example": round(EXAMPLE_RATING * (1 + float(r.score_bonus or 0) / 100))}
+            for r in rarities
+        ],
+    }
     if request.user.is_authenticated:
         context["exchanges"] = list(pending_exchanges(request.user))
     if request.user.is_authenticated:
@@ -163,6 +175,12 @@ def opening_detail(request, pk):
     )
 
 
+#: La note d'exemple pour expliquer le bonus des raretés (accueil).
+EXAMPLE_RATING = 80
+COLLECTION_PAGE_SIZE = 48
+PERIODS_SHOWN = 8
+
+
 @login_required
 def collection(request):
     cards = _playable_cards().select_related("player", "split", "team", "image", "stats")
@@ -190,9 +208,13 @@ def collection(request):
     if rarity_code:
         cards = cards.filter(pk__in=[cid for cid, items in copies.items() if any(r.code == rarity_code for r, _ in items)])
 
-    cards = cards.order_by("split__start_date", "-overall", "player__ign")
+    # Par pages : avec tout l'historique importé, des milliers de cartes.
+    cards = cards.order_by("-split__start_date", "-overall", "player__ign")
+    page = Paginator(cards, COLLECTION_PAGE_SIZE).get_page(request.GET.get("page"))
+    query = request.GET.copy()
+    query.pop("page", None)
     rows = []
-    for card in cards:
+    for card in page.object_list:
         items = copies.get(card.pk, [])
         best = items[-1][0] if items else None
         rows.append({"card": card, "copies": items, "best": best,
@@ -206,16 +228,23 @@ def collection(request):
         )
         .filter(total__gt=0)
         .select_related("league")
+        .order_by("-start_date")
     )
+    # Le bandeau des périodes : celles où le joueur a des cartes (ou la
+    # période filtrée), sinon les plus récentes ; les autres sont dans le filtre.
+    progress = list(progress)
+    shown = [s for s in progress if s.owned or s.slug == split_slug] or progress[:PERIODS_SHOWN]
     return render(
         request,
         "cards/collection.html",
         {
             "rows": rows,
-            "splits": Split.objects.filter(is_playable=True, cards__isnull=False).distinct(),
+            "splits": [s for s in progress],
             "rarities": Rarity.objects.all(),
             "roles": ROLES,
-            "progress": progress,
+            "progress": shown,
+            "page": page,
+            "query": query.urlencode(),
             "fusable_count": sum(1 for items in copies.values()
                                  if any(r.fusion_cost and q >= r.fusion_cost for r, q in items)),
             "filters": {"periode": split_slug, "rarete": rarity_code, "role": role, "possession": owned_filter,

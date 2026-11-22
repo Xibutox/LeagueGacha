@@ -26,7 +26,7 @@ from esport.scoring import (
     unplayed_rating,
 )
 
-from . import draw
+from . import catalog, draw
 from .models import (
     COMPOSITIONS,
     ROLES,
@@ -234,6 +234,7 @@ def ensure_boosters(deactivate_obsolete: bool = False) -> list[str]:
 
     if deactivate_obsolete:
         Booster.objects.filter(auto=True, is_active=True).exclude(slug__in=wanted).update(is_active=False)
+    catalog.bump()
     return created
 
 
@@ -256,11 +257,11 @@ def booster_showcase(booster: Booster, size: int = SHOWCASE_SIZE, rng=None) -> l
     en légendaire, avec la chance de tirer ce joueur en légendaire sur une
     carte : [{"card", "rarity", "rate"}]."""
     rng = rng or random
-    ids = list(booster.card_pool().values_list("pk", flat=True))
+    ids = catalog.pool_ids(booster)
     top = Rarity.objects.order_by("-order").first()
     if not ids or top is None:
         return []
-    rules = rarity_rules(booster)
+    rules = catalog.rules(booster)
     total = sum(r.weight for r in rules) or 1
     top_share = next((r.weight for r in rules if r.key == top.pk), 0) / total
     rate = format_rate(100 * top_share / len(ids))
@@ -327,6 +328,7 @@ def generate_cards(split: Split) -> tuple[int, int]:
     Card.objects.filter(split=split, stats__isnull=True).update(is_active=False)
     compute_card_champions(split)
     refresh_rosters_of_split(split)
+    catalog.bump()
     return created, updated
 
 
@@ -682,7 +684,7 @@ def open_booster(user, booster: Booster, rng=None) -> PackOpening:
     with transaction.atomic():
         # Verrouille l'utilisateur : deux ouvertures simultanées ne prennent pas le même booster.
         get_user_model().objects.select_for_update().filter(pk=user.pk).first()
-        cards = list(booster.card_pool().values_list("id", flat=True))
+        cards = catalog.pool_ids(booster)
         if not cards:
             raise GameError("Ce booster ne contient encore aucune carte.")
         _take_pack(user, booster)
@@ -694,7 +696,7 @@ def open_booster(user, booster: Booster, rng=None) -> PackOpening:
 def _deal(user, booster: Booster, cards: list[int], rng=None, portal=None) -> PackOpening:
     """Tire les cartes d'un booster et les donne au joueur (dans une transaction)."""
     guaranteed = booster.guaranteed_rarity.order if booster.guaranteed_rarity else None
-    picks = draw.draw_pack(cards, rarity_rules(booster), booster.cards_per_pack,
+    picks = draw.draw_pack(cards, catalog.rules(booster), booster.cards_per_pack,
                            guaranteed_order=guaranteed, rng=rng)
     opening = PackOpening.objects.create(user=user, booster=booster, portal=portal)
     for slot, (rarity_id, card_id) in enumerate(picks, start=1):
@@ -726,7 +728,7 @@ def ensure_daily_portal(now=None):
     existing = Portal.objects.filter(auto=True, starts_at=start).first()
     if existing:
         return existing
-    candidates = [b for b in Booster.objects.filter(is_active=False) if b.card_pool().exists()]
+    candidates = [b for b in Booster.objects.filter(is_active=False) if catalog.has_cards(b)]
     if not candidates:
         return None
     last = {}
@@ -795,7 +797,7 @@ def open_portal(user, portal, rng=None, now=None) -> PackOpening:
             if status["done"]:
                 raise GameError("Tu as ouvert tout ce que ce portail propose.")
             raise GameError("Le prochain booster de ce portail n'est pas encore prêt.")
-        cards = list(portal.booster.card_pool().values_list("id", flat=True))
+        cards = catalog.pool_ids(portal.booster)
         if not cards:
             raise GameError("Ce booster ne contient encore aucune carte.")
         opening = _deal(user, portal.booster, cards, rng, portal=portal)
@@ -1115,6 +1117,7 @@ def remove_league_data(league) -> dict:
 
     summary["deleted_boosters"] = deleted_boosters
     summary["disabled_boosters"] = disabled_boosters
+    catalog.bump()
     return summary
 
 
@@ -1201,4 +1204,5 @@ def regroup_splits(log=None) -> list[str]:
                 old.delete()
             refresh_rosters_of_split(target)
         done.append(target.name)
+    catalog.bump()
     return done

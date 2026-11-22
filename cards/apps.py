@@ -5,3 +5,8 @@ class CardsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
     name = "cards"
     verbose_name = "Jeu de cartes"
+
+    def ready(self):
+        from . import catalog
+
+        catalog.connect_signals()

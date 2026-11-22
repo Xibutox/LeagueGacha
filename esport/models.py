@@ -221,6 +221,8 @@ class GameAppearance(models.Model):
         verbose_name_plural = "lignes de scoreboard"
         ordering = ["-played_at"]
         constraints = [models.UniqueConstraint(fields=["game_id", "player"], name="unique_player_per_game")]
+        # « Cette équipe a-t-elle joué ce tournoi ? » (booster de base).
+        indexes = [models.Index(fields=["team", "tournament"], name="appearance_team_tournament")]
 
     def __str__(self):
         return f"{self.player} — {self.champion} ({self.game_id})"

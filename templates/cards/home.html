@@ -38,23 +38,30 @@
   </div>
   <div>
     <h3>Raretés</h3>
-    <div class="rarity-row">
-      {% for r in rarities %}
-        <span class="rarity-chip" style="--rarity: {{ r.color }}"><b>{{ r.name }}</b>{{ r.drop_rate|floatformat:"-2" }} %{% if r.score_bonus %} · +{{ r.score_bonus|floatformat:"-1" }} % en équipe{% endif %}</span>
-      {% endfor %}
-    </div>
-    <p class="small muted">Chance par carte tirée. Deux exemplaires d'une rareté se fusionnent en un de la suivante.</p>
+    <table class="rarity-table">
+      <thead><tr><th scope="col">Rareté</th><th scope="col">Chance par carte</th><th scope="col">Dans tes équipes</th></tr></thead>
+      <tbody>
+        {% for row in rarity_rows %}
+          <tr style="--rarity: {{ row.rarity.color }}">
+            <th scope="row">{{ row.rarity.name }}</th>
+            <td>{{ row.rarity.drop_rate|floatformat:"-2" }} %</td>
+            <td>{% if row.rarity.score_bonus %}<b>+{{ row.rarity.score_bonus|floatformat:"-1" }} %</b> <span class="muted example-long">(un joueur noté {{ example_rating }} compte pour {{ row.example }})</span><span class="muted example-short">{{ example_rating }} → {{ row.example }}</span>{% else %}<span class="muted">note normale</span>{% endif %}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+    <p class="small muted">Un même joueur existe dans toutes les raretés : plus son exemplaire est rare, plus sa note compte dans tes équipes. 2 exemplaires d'une rareté se fusionnent en 1 de la rareté au-dessus.</p>
   </div>
 </section>
 
-{% if portals %}
-<div class="strap"><h2 id="portails">Portails</h2></div>
-<div class="shelf portals">
+<div class="strap"><h2 id="boosters">Boosters</h2></div>
+{# Les portails (temporaires) d'abord, puis les boosters permanents. #}
+<div class="shelf">
   {% for portal in portals %}
     {% with s=portal.status %}
     <article class="pack-tile portal-tile{% if s.available %} is-ready{% endif %}" style="--booster: {{ portal.booster.color }}">
-      <p class="portal-clock">Ferme dans <time data-countdown data-reload datetime="{{ portal.ends_at|date:'c' }}"></time></p>
       {% include "cards/_pack_art.html" with booster=portal.booster showcase=portal.showcase title=portal.title %}
+      <p class="portal-clock"><span class="portal-badge">Portail</span> ferme dans <time data-countdown data-reload datetime="{{ portal.ends_at|date:'c' }}"></time></p>
       {% if s %}
         <div class="pack-stock">
           {% if s.unlimited %}
@@ -73,11 +80,6 @@
     </article>
     {% endwith %}
   {% endfor %}
-</div>
-{% endif %}
-
-<div class="strap"><h2 id="boosters">Boosters</h2></div>
-<div class="shelf">
   {% for booster in boosters %}
     {% with s=booster.status %}
     <article class="pack-tile{% if s and s.available or s and s.unlimited %} is-ready{% endif %}" style="--booster: {{ booster.color }}">
@@ -101,8 +103,8 @@
     </article>
     {% endwith %}
   {% empty %}
-    <p class="muted">Aucun booster pour l'instant : ils apparaissent dès qu'une première ligue est importée.
-      {% if user.is_staff %}<a href="{% url 'site:esport_split_importer-une-ligue' %}">Importer une ligue</a>{% endif %}</p>
+    {% if not portals %}<p class="muted">Aucun booster pour l'instant : ils apparaissent dès qu'une première ligue est importée.
+      {% if user.is_staff %}<a href="{% url 'site:esport_split_importer-une-ligue' %}">Importer une ligue</a>{% endif %}</p>{% endif %}
   {% endfor %}
 </div>
 
@@ -115,4 +117,4 @@
 </div>
 {% endif %}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/showcase.js' %}?v=10" defer></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/showcase.js' %}?v=11" defer></script>{% endblock %}

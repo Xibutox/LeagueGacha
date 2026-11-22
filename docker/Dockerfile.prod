@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 #
 # Image de production (Raspberry Pi, arm64, ou tout serveur) : le code est
-# copié dans l'image, rien n'est monté. Servie par Daphne (HTTP + WebSockets
-# du framework), derrière Caddy (compose.prod.yaml).
+# copié dans l'image, rien n'est monté. Les pages sont servies par Gunicorn
+# (commande du service web), les WebSockets par Daphne (commande par défaut,
+# service ws), derrière Caddy (compose.prod.yaml).
 
 FROM python:3.13-slim
 

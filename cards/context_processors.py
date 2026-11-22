@@ -14,7 +14,9 @@ def game(request):
         from .models import Booster
         from .services import booster_status, open_portals, portal_status
 
-        boosters = [b for b in Booster.objects.filter(is_active=True) if b.card_pool().exists()]
+        from . import catalog
+
+        boosters = [b for b in Booster.objects.filter(is_active=True) if catalog.has_cards(b)]
         status = booster_status(user, boosters)
         if any(s["unlimited"] for s in status.values()):
             return "∞"
