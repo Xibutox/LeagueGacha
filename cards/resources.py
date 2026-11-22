@@ -26,6 +26,8 @@ from generic.sites import (
 from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     ExchangeOffer,
+    Tournament,
+    TournamentSeries,
     Portal,
     Booster,
     BoosterGift,
@@ -713,6 +715,70 @@ class ExchangeOfferResource(ModelResource):
     ordering = ("-created_at",)
     fields = (("user", "created_at"), ("given_card", "given_rarity"), ("rarity", "chosen", "chosen_at"), "choices")
     readonly_fields = ("user", "created_at", "given_card", "given_rarity", "rarity", "chosen", "chosen_at", "choices")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(Tournament)
+class TournamentResource(ModelResource):
+    icon = "emoji_events"
+    group = GAME
+    order = 4
+    label_plural = _("tournois")
+    description = _(
+        "Un tournoi international du passé, rejoué : les joueurs du site affrontent ses "
+        "équipes de la dernière à la gagnante, en Bo5 avec draft Fearless. Un tournoi "
+        "automatique de 7 jours se crée tout seul quand aucun n'est en cours ; crée-en "
+        "d'autres ici, change leur durée ou l'attente entre deux Bo5."
+    )
+
+    list_display = ("title", "split", "starts_at", "ends_at", "cooldown_hours", "opponent_count", "auto", "is_active")
+    list_select_related = ("split",)
+    search_fields = ("name", "split__name")
+    list_filter = ("auto", "is_active")
+    ordering = ("-starts_at",)
+    fields = (("name", "split"), ("starts_at", "ends_at"), ("cooldown_hours", "is_active"))
+
+    @display(description=_("Tournoi"))
+    def title(self, obj):
+        return obj.title
+
+    @display(description=_("Équipes"))
+    def opponent_count(self, obj):
+        return len(obj.opponents)
+
+    def save_model(self, request, serializer, change):
+        tournament = serializer.save()
+        if not tournament.opponents and tournament.split_id:
+            from esport.models import Team
+
+            from .tournament import standings
+
+            teams = standings(tournament.split)
+            names = dict(Team.objects.filter(pk__in=teams).values_list("pk", "name"))
+            tournament.opponents = [{"team": t, "name": names.get(t, "?")} for t in teams]
+            tournament.save(update_fields=["opponents"])
+        return tournament
+
+
+@register(TournamentSeries)
+class TournamentSeriesResource(ModelResource):
+    icon = "sports_esports"
+    group = PLAYERS
+    order = 6
+    label_plural = _("Bo5 de tournoi")
+    description = _("Les Bo5 joués en mode tournoi.")
+    history = False
+
+    list_display = ("created_at", "run", "team", "status", "wins", "losses", "reward_card", "reward_rarity")
+    list_select_related = ("run__user", "run__tournament__split", "team", "reward_card__player",
+                           "reward_card__split", "reward_rarity")
+    list_filter = ("status",)
+    search_fields = ("run__user__username", "team__name")
+    ordering = ("-created_at",)
+    readonly_fields = ("run", "step", "team", "status", "opponent", "opponent_rarity", "lineup",
+                       "lineup_rarities", "games", "wins", "losses", "reward_card", "reward_rarity", "finished_at")
 
     def has_add_permission(self, request):
         return False

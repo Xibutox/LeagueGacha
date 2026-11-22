@@ -622,3 +622,117 @@ class ExchangeOffer(models.Model):
 
     def __str__(self):
         return f"{self.user} — {self.given_card} ({self.created_at:%d/%m/%Y %H:%M})"
+
+
+# --------------------------------------------------------------------- Tournois
+class Tournament(models.Model):
+    """Un tournoi international du passé, rejoué pendant quelques jours :
+    chaque joueur du site affronte ses équipes, de la dernière à la
+    gagnante, en Bo5 avec draft Fearless. Une défaite n'élimine pas : on
+    retente après l'attente (`cooldown_hours`, entre deux Bo5)."""
+
+    name = models.CharField("nom", max_length=120, blank=True, help_text="Vide : le nom du tournoi.")
+    split = models.ForeignKey(
+        "esport.Split", verbose_name="tournoi rejoué", on_delete=models.CASCADE, related_name="game_tournaments"
+    )
+    starts_at = models.DateTimeField("ouverture")
+    ends_at = models.DateTimeField("fermeture")
+    cooldown_hours = models.DecimalField(
+        "attente entre deux Bo5 (heures)", max_digits=5, decimal_places=2, default=Decimal("1"),
+        validators=[MinValueValidator(Decimal("0"))],
+    )
+    opponents = models.JSONField(
+        "adversaires", default=list, blank=True,
+        help_text="Les équipes, de la moins bien classée à la gagnante (calculé à la création).",
+    )
+    auto = models.BooleanField("créé automatiquement", default=False)
+    is_active = models.BooleanField("actif", default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "tournoi"
+        verbose_name_plural = "tournois"
+        ordering = ["-starts_at"]
+
+    def __str__(self):
+        return self.title
+
+    @property
+    def title(self) -> str:
+        return self.name or self.split.name
+
+
+class TournamentRun(models.Model):
+    """La progression d'un joueur du site dans un tournoi."""
+
+    tournament = models.ForeignKey(Tournament, verbose_name="tournoi", on_delete=models.CASCADE, related_name="runs")
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="tournament_runs"
+    )
+    step = models.PositiveSmallIntegerField("adversaires battus", default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        verbose_name = "parcours de tournoi"
+        verbose_name_plural = "parcours de tournoi"
+        constraints = [models.UniqueConstraint(fields=["tournament", "user"], name="one_run_per_tournament")]
+
+    def __str__(self):
+        return f"{self.user} — {self.tournament} ({self.step})"
+
+    @property
+    def finished(self) -> bool:
+        return self.step >= len(self.tournament.opponents)
+
+
+class TournamentSeries(models.Model):
+    """Un Bo5 contre une équipe du tournoi. Les parties sont gardées dans
+    `games` : une entrée par partie, avec les champions choisis
+    (user_picks, opponent_picks : {poste: id}), le détail des postes
+    (user, opponent), les scores et le vainqueur (won)."""
+
+    class Status(models.TextChoices):
+        LINEUP = "lineup", "choix des joueurs"
+        DRAFT = "draft", "en cours"
+        WON = "won", "gagné"
+        LOST = "lost", "perdu"
+
+    WINS_NEEDED = 3
+
+    run = models.ForeignKey(TournamentRun, verbose_name="parcours", on_delete=models.CASCADE, related_name="series")
+    step = models.PositiveSmallIntegerField("rang de l'adversaire")
+    team = models.ForeignKey("esport.Team", verbose_name="adversaire", on_delete=models.SET_NULL, null=True)
+    status = models.CharField("état", max_length=10, choices=Status.choices, default=Status.LINEUP)
+    opponent = models.JSONField("joueurs adverses", default=dict, help_text="{poste: id de carte}")
+    opponent_rarity = models.ForeignKey(Rarity, verbose_name="rareté adverse", on_delete=models.PROTECT, related_name="+")
+    lineup = models.JSONField("joueurs alignés", default=dict, blank=True, help_text="{poste: id de carte}")
+    lineup_rarities = models.JSONField("raretés alignées", default=dict, blank=True)
+    games = models.JSONField("parties", default=list, blank=True)
+    wins = models.PositiveSmallIntegerField("victoires", default=0)
+    losses = models.PositiveSmallIntegerField("défaites", default=0)
+    reward_card = models.ForeignKey(Card, verbose_name="carte gagnée", on_delete=models.SET_NULL, null=True,
+                                    blank=True, related_name="+")
+    reward_rarity = models.ForeignKey(Rarity, verbose_name="rareté gagnée", on_delete=models.SET_NULL, null=True,
+                                      blank=True, related_name="+")
+    created_at = models.DateTimeField("commencé le", auto_now_add=True)
+    finished_at = models.DateTimeField("terminé le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Bo5 de tournoi"
+        verbose_name_plural = "Bo5 de tournoi"
+        ordering = ["-created_at"]
+
+    def __str__(self):
+        return f"{self.run.user} vs {self.team} ({self.wins}-{self.losses})"
+
+    @property
+    def is_over(self) -> bool:
+        return self.status in {self.Status.WON, self.Status.LOST}
+
+    def used_champions(self) -> set[int]:
+        """Fearless : tous les champions déjà joués dans ce Bo5, des deux côtés."""
+        used = set()
+        for game in self.games:
+            used.update(int(c) for c in game["user_picks"].values())
+            used.update(int(c) for c in game["opponent_picks"].values())
+        return used

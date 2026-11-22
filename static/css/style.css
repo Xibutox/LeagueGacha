@@ -493,3 +493,77 @@ a.gift { color: inherit; text-decoration: none; }
 .infinity { display: inline-block; width: 1.5em; height: .75em; vertical-align: -.05em; fill: none;
   stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
 .pack-stock b .infinity { width: 1.6em; height: .8em; }
+
+/* ------------------------------------------------------------ Tournoi */
+.tourney { margin-bottom: 40px; }
+.tourney-action { margin: 14px 0 22px; }
+.ladder { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; max-width: 760px; }
+.ladder li { display: grid; grid-template-columns: 90px 1fr auto auto 90px; gap: 12px; align-items: baseline;
+  padding: 9px 14px; background: var(--rift); }
+.ladder-rank { font-size: .8rem; color: var(--muted, #8a96ad); }
+.ladder-team { font: 700 1.05rem/1.1 var(--display); }
+.ladder-rarity { font-size: .8rem; color: var(--rarity); }
+.ladder-reward { font-size: .78rem; }
+.ladder-state { font-size: .8rem; text-align: right; }
+.ladder li.is-beaten { opacity: .55; }
+.ladder li.is-beaten .ladder-state { color: #5bd08a; }
+.ladder li.is-current { outline: 2px solid var(--gold, #e2b35a); }
+.ladder li.is-current .ladder-state { color: var(--gold, #e2b35a); font-weight: 600; }
+@media (max-width: 640px) {
+  .ladder li { grid-template-columns: 1fr auto; row-gap: 2px; }
+  .ladder-rank, .ladder-reward { grid-column: 1; }
+  .ladder-state { grid-column: 2; grid-row: 1; }
+}
+
+.bo5-head { display: flex; justify-content: space-between; align-items: center; gap: 20px; flex-wrap: wrap; }
+.bo5-head h1 { margin: 0 0 4px; }
+.bo5-score { display: flex; align-items: center; gap: 10px; font: 800 3rem/1 var(--display); }
+.bo5-score b { color: var(--muted, #8a96ad); }
+.bo5-score b.lead { color: var(--gold, #e2b35a); }
+.bo5-result { display: flex; gap: 28px; align-items: center; flex-wrap: wrap; margin: 22px 0; padding: 18px 22px;
+  background: var(--rift); border-left: 4px solid #5bd08a; }
+.bo5-result.lost { border-left-color: #e0605a; }
+.bo5-result h2 { margin: 0 0 6px; }
+.bo5-reward { width: 190px; }
+
+.lineup-form { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 18px; }
+.lineup-col { display: flex; flex-direction: column; gap: 10px; }
+.lineup-pick { display: flex; flex-direction: column; gap: 4px; font-size: .85rem; }
+.lineup-pick select { width: 100%; }
+.lineup-submit { grid-column: 1 / -1; }
+@media (max-width: 900px) { .lineup-form { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+.fearless { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; font-size: .85rem; }
+.banned { padding: 2px 8px; background: rgba(224, 96, 90, .15); color: #f0a09b; text-decoration: line-through; }
+.draft-form { display: grid; gap: 8px; max-width: 900px; }
+.draft-row { display: grid; grid-template-columns: 70px 140px minmax(0, 1fr) 60px 160px; gap: 12px; align-items: center;
+  padding: 10px 12px; background: var(--rift); }
+.draft-row select { width: 100%; }
+.draft-player { display: flex; flex-direction: column; }
+.draft-player small { font-size: .72rem; }
+.draft-vs { font-size: .75rem; color: var(--muted, #8a96ad); text-align: center; }
+.draft-form > .btn { justify-self: start; margin-top: 8px; }
+@media (max-width: 760px) {
+  .draft-row { grid-template-columns: auto 1fr; }
+  .draft-row select { grid-column: 1 / -1; }
+  .draft-vs { text-align: left; }
+}
+
+.game-card { margin: 0 0 18px; padding: 14px 16px; background: var(--rift); border-left: 4px solid #5bd08a; }
+.game-card.lost { border-left-color: #e0605a; }
+.game-card header { display: flex; justify-content: space-between; align-items: baseline; }
+.game-card h3 { margin: 0 0 8px; }
+.game-total { font: 700 1.3rem/1 var(--display); }
+.game-table { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.game-table th { font-size: .72rem; font-weight: 600; color: var(--muted, #8a96ad); text-align: left; padding: 4px 8px; }
+.game-table td { padding: 6px 8px; border-top: 1px solid rgba(255,255,255,.06); vertical-align: top; }
+.game-table td small { display: block; font-size: .72rem; }
+.game-table .num { font-variant-numeric: tabular-nums; font-weight: 600; }
+.game-table .face { text-align: center; }
+.game-table .face .up { color: #5bd08a; }
+.game-table .face .down { color: #e0605a; }
+.game-table tr.coherence td { color: var(--muted, #8a96ad); font-size: .8rem; }
+@media (max-width: 640px) {
+  .game-table th:nth-child(3), .game-table td:nth-child(3) { display: none; }
+  .game-table { font-size: .8rem; }
+}

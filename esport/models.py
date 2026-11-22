@@ -222,7 +222,11 @@ class GameAppearance(models.Model):
         ordering = ["-played_at"]
         constraints = [models.UniqueConstraint(fields=["game_id", "player"], name="unique_player_per_game")]
         # « Cette équipe a-t-elle joué ce tournoi ? » (booster de base).
-        indexes = [models.Index(fields=["team", "tournament"], name="appearance_team_tournament")]
+        indexes = [
+            models.Index(fields=["team", "tournament"], name="appearance_team_tournament"),
+            # Les face-à-face de champions (mode tournoi).
+            models.Index(fields=["role", "champion"], name="appearance_role_champion"),
+        ]
 
     def __str__(self):
         return f"{self.player} — {self.champion} ({self.game_id})"

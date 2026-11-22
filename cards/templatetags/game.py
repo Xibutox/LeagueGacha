@@ -25,3 +25,12 @@ def flag(country, size=18):
         label,
         size,
     )
+
+
+@register.filter
+def get(mapping, key):
+    """Une valeur d'un dictionnaire : {{ partie.user|get:poste }}."""
+    try:
+        return mapping.get(key)
+    except AttributeError:
+        return None

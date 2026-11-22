@@ -15,6 +15,9 @@ from cards.models import (
     PackOpening,
     PackOpeningCard,
     Portal,
+    Tournament as GameTournament,
+    TournamentRun,
+    TournamentSeries,
     Rarity,
     UserCard,
 )
@@ -70,6 +73,12 @@ class TestEveryPage(PageSweep):
                 user=admin_user, given_card=card, given_rarity=Rarity.objects.last(), rarity=Rarity.objects.first()),
             "cards.portal": Portal.objects.create(
                 booster=booster, starts_at=opening.opened_at, ends_at=opening.opened_at + timedelta(days=1)),
+            "cards.tournament": (game_tournament := GameTournament.objects.create(
+                split=split, starts_at=opening.opened_at, ends_at=opening.opened_at + timedelta(days=7),
+                opponents=[{"team": card.team_id, "name": card.team.name}])),
+            "cards.tournamentrun": (run := TournamentRun.objects.create(tournament=game_tournament, user=admin_user)),
+            "cards.tournamentseries": TournamentSeries.objects.create(
+                run=run, step=0, team=card.team, opponent={card.role: card.pk}, opponent_rarity=Rarity.objects.first()),
             "cards.boosterstock": BoosterStock.objects.get_or_create(
                 user=admin_user, booster=booster, defaults={"refilled_at": opening.opened_at})[0],
         }
@@ -98,6 +107,11 @@ class TestEveryPage(PageSweep):
         # Une ouverture n'est visible que de celui qui l'a faite.
         "cards:opening": (404,),
         "cards:exchange_offer": (404,),
+        "cards:tournament_series": (404,),
+        "cards:tournament_start": (405,),
+        "cards:tournament_lineup": (405,),
+        "cards:tournament_draft": (405,),
+        "site:cards_tournamentseries_add": (403,),
         # Une équipe n'est visible que de son propriétaire ; supprimer = POST.
         "cards:roster_edit": (404,),
         "cards:roster_delete": (405,),
@@ -111,6 +125,10 @@ class TestEveryPage(PageSweep):
             return records["cards.packopening"].pk
         if url_name in {"cards:exchange_offer", "cards:choose_exchange"}:
             return records["cards.exchangeoffer"].pk
+        if url_name == "cards:tournament_start":
+            return records["cards.tournament"].pk
+        if url_name in {"cards:tournament_series", "cards:tournament_lineup", "cards:tournament_draft"}:
+            return records["cards.tournamentseries"].pk
         if url_name == "cards:open_portal":
             return records["cards.portal"].pk
         if url_name in {"cards:card_detail", "cards:fuse", "cards:exchange"}:

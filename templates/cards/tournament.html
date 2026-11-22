@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Tournoi — LeagueGacha{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Tournoi</h1>
+    <p>Rejoue un tournoi international : affronte ses équipes de la dernière à la gagnante, en Bo5.
+      À chaque partie, toi et l'adversaire choisissez vos champions à l'aveugle, en Fearless : un champion joué ne revient plus du Bo5.
+      Une défaite ne t'élimine pas, tu retentes après une courte attente.</p>
+  </div>
+</div>
+
+{% for t in tournaments %}
+  <section class="tourney">
+    <div class="strap"><h2>{{ t.title }}</h2></div>
+    <p class="muted">Ferme dans <time data-countdown data-reload datetime="{{ t.ends_at|date:'c' }}"></time> ·
+      {{ t.opponents|length }} équipes · {{ t.cooldown_hours|floatformat:"-1" }} h d'attente entre deux Bo5</p>
+
+    {% if user.is_authenticated %}
+      {% with s=t.status %}
+      <div class="tourney-action">
+        {% if s.open %}
+          <a class="btn btn-gold" href="{% url 'cards:tournament_series' s.open.pk %}">Reprendre ton Bo5 contre {{ s.open.team.name }} ({{ s.open.wins }}–{{ s.open.losses }})</a>
+        {% elif s.finished %}
+          <p><b>Tu as battu toutes les équipes de ce tournoi.</b></p>
+        {% elif s.can_start %}
+          <form method="post" action="{% url 'cards:tournament_start' t.pk %}">{% csrf_token %}
+            <button class="btn btn-gold btn-big" type="submit">Défier {% for o in t.ladder %}{% if o.current %}{{ o.name }}{% endif %}{% endfor %}</button>
+          </form>
+        {% elif s.next_at %}
+          <p>Prochain Bo5 dans <time data-countdown data-reload datetime="{{ s.next_at|date:'c' }}"></time></p>
+        {% endif %}
+      </div>
+      {% endwith %}
+    {% else %}
+      <p><a class="btn btn-gold" href="{% url 'login' %}?next={{ request.path|urlencode }}">Connecte-toi pour jouer</a></p>
+    {% endif %}
+
+    <ol class="ladder">
+      {% for o in t.ladder %}
+        <li class="{% if o.beaten %}is-beaten{% elif o.current %}is-current{% else %}is-locked{% endif %}">
+          <span class="ladder-rank">{% if forloop.last %}Vainqueur{% else %}{{ o.rank }}e{% endif %}</span>
+          <b class="ladder-team">{{ o.name }}</b>
+          <span class="ladder-rarity" style="--rarity: {{ o.rarity.color }}" title="Rareté de ses cartes">cartes {{ o.rarity.name|lower }}s</span>
+          <span class="ladder-reward muted" style="--rarity: {{ o.reward.color }}">gain : 1 {{ o.reward.name|lower }}</span>
+          <span class="ladder-state">{% if o.beaten %}battue{% elif o.current %}à affronter{% endif %}</span>
+        </li>
+      {% endfor %}
+    </ol>
+  </section>
+{% empty %}
+  <p class="muted">Aucun tournoi en cours : il en faut un importé (First Stand, MSI, Worlds ou EWC).</p>
+{% endfor %}
+{% endblock %}

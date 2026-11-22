@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% load game %}
+{% block title %}Bo5 contre {{ series.team.name }} — LeagueGacha{% endblock %}
+{% block content %}
+<p class="small"><a href="{% url 'cards:tournament' %}">← {{ tournament.title }}</a></p>
+<div class="bo5-head">
+  <div>
+    <h1>Bo5 contre {{ series.team.name }}</h1>
+    <p class="muted">Adversaire {{ series.step|add:1 }} sur {{ total }} · ses cartes sont <b style="color: {{ series.opponent_rarity.color }}">{{ series.opponent_rarity.name|lower }}s</b> · premier à 3 victoires</p>
+  </div>
+  <div class="bo5-score" aria-label="Score du Bo5">
+    <b class="{% if series.wins > series.losses %}lead{% endif %}">{{ series.wins }}</b><span>–</span><b class="{% if series.losses > series.wins %}lead{% endif %}">{{ series.losses }}</b>
+  </div>
+</div>
+
+{% if series.status == "won" %}
+  <div class="bo5-result won">
+    <div>
+      <h2>Victoire {{ series.wins }}–{{ series.losses }}</h2>
+      <p>{{ series.reward_card.player.ign }} rejoint ta collection en {{ series.reward_rarity.name|lower }}.</p>
+      <p><a class="btn btn-gold" href="{% url 'cards:tournament' %}">Retour au tournoi</a></p>
+    </div>
+    <div class="bo5-reward">{% include "cards/_card.html" with card=series.reward_card rarity=series.reward_rarity is_new=True %}</div>
+  </div>
+{% elif series.status == "lost" %}
+  <div class="bo5-result lost">
+    <h2>Défaite {{ series.wins }}–{{ series.losses }}</h2>
+    <p>Tu n'es pas éliminé : {% if run_status.next_at %}retente dans <time data-countdown data-reload datetime="{{ run_status.next_at|date:'c' }}"></time>{% else %}tu peux retenter dès maintenant{% endif %}, avec d'autres joueurs ou d'autres champions.</p>
+    <p><a class="btn btn-gold" href="{% url 'cards:tournament' %}">Retour au tournoi</a></p>
+  </div>
+{% endif %}
+
+{% if series.status == "lineup" %}
+  <div class="strap"><h2>Choisis tes 5 joueurs</h2></div>
+  <p class="muted">Face à chaque joueur adverse, aligne un joueur de ta collection au même poste. Ses notes sont celles de ce tournoi ; les tiennes, celles de ta carte, avec le bonus de sa meilleure rareté.</p>
+  <form method="post" action="{% url 'cards:tournament_lineup' series.pk %}" class="lineup-form">{% csrf_token %}
+    {% for role, card in opponent %}
+      {% for r, mine in choices %}{% if r == role %}
+      <div class="lineup-col">
+        {% include "cards/_card.html" with card=card rarity=series.opponent_rarity %}
+        <label class="lineup-pick">
+          <span>Ton {{ role }}</span>
+          <select name="{{ role }}" required>
+            <option value="">— choisir —</option>
+            {% for c in mine %}<option value="{{ c.pk }}">{{ c.player.ign }} · {{ c.overall }} · {{ c.best.name|lower }} · {{ c.split.name }}</option>{% endfor %}
+          </select>
+          {% if not mine %}<small class="muted">Aucun {{ role }} dans ta collection : ouvre des boosters.</small>{% endif %}
+        </label>
+      </div>
+      {% endif %}{% endfor %}
+    {% endfor %}
+    <div class="lineup-submit"><button class="btn btn-gold btn-big" type="submit">Valider mes joueurs</button></div>
+  </form>
+{% endif %}
+
+{% if draft %}
+  <div class="strap"><h2>Partie {{ series.games|length|add:1 }} : ta draft</h2></div>
+  <p class="muted">Choisis un champion par joueur. L'adversaire choisit en même temps, sans voir les tiens, en puisant dans ce que ses joueurs ont joué pendant ce tournoi.
+    Chaque poste compte la note du joueur, sa note sur le champion, le bonus de rareté et le bilan du champion face à celui d'en face.</p>
+  {% if banned %}
+    <p class="fearless"><b>Fearless, déjà joués :</b> {% for c in banned %}<span class="banned">{{ c.name }}</span>{% endfor %}</p>
+  {% endif %}
+  <form method="post" action="{% url 'cards:tournament_draft' series.pk %}" class="draft-form">{% csrf_token %}
+    {% for row in draft %}
+      <div class="draft-row">
+        <span class="role role-{{ row.role|lower }}">{{ row.role }}</span>
+        <span class="draft-player"><b>{{ row.card.player.ign }}</b><small class="muted">note {{ row.card.overall }}</small></span>
+        <select name="{{ row.role }}" required aria-label="Champion de {{ row.card.player.ign }}">
+          <option value="">— champion —</option>
+          {% for o in row.options %}<option value="{{ o.id }}">{{ o.name }} · {{ o.rating }}{% if o.played %} · {{ o.games }} partie{{ o.games|pluralize }}{% else %} · jamais joué{% endif %}</option>{% endfor %}
+        </select>
+        <span class="draft-vs">contre</span>
+        <span class="draft-player them"><b>{{ row.opponent.player.ign }}</b><small class="muted">note {{ row.opponent.overall }} · champion caché</small></span>
+      </div>
+    {% endfor %}
+    <button class="btn btn-gold btn-big" type="submit">Lancer la partie</button>
+  </form>
+{% endif %}
+
+{% if games %}
+  <div class="strap"><h2>Parties</h2></div>
+  {% for g in games %}
+    <article class="game-card {% if g.won %}won{% else %}lost{% endif %}" id="partie-{{ g.number }}">
+      <header>
+        <h3>Partie {{ g.number }} : {% if g.won %}gagnée{% else %}perdue{% endif %}</h3>
+        <span class="game-total"><b>{{ g.user_score }}</b> – <b>{{ g.opponent_score }}</b></span>
+      </header>
+      <table class="game-table">
+        <thead><tr><th scope="col">Toi</th><th scope="col">Score</th><th scope="col">Face-à-face</th><th scope="col">Score</th><th scope="col">{{ series.team.name }}</th></tr></thead>
+        <tbody>
+          {% for role in roles %}
+            {% with mine=g.user|get:role theirs=g.opponent|get:role %}
+            <tr>
+              <td><b>{{ mine.champion_name }}</b><small class="muted">{{ mine.player }} · {{ role }}</small></td>
+              <td class="num">{{ mine.score }}</td>
+              <td class="face"><span class="{% if mine.bonus > 0 %}up{% elif mine.bonus < 0 %}down{% endif %}">{{ mine.matchup }} %</span><small class="muted">{% if mine.matchup_games %}{{ mine.matchup_games }} partie{{ mine.matchup_games|pluralize }}{% else %}jamais vu{% endif %}</small></td>
+              <td class="num">{{ theirs.score }}</td>
+              <td><b>{{ theirs.champion_name }}</b><small class="muted">{{ theirs.player }}</small></td>
+            </tr>
+            {% endwith %}
+          {% endfor %}
+          <tr class="coherence"><td>Cohérence de la compo</td><td class="num">{{ g.user_coherence }}</td><td></td><td class="num">{{ g.opponent_coherence }}</td><td></td></tr>
+        </tbody>
+      </table>
+    </article>
+  {% endfor %}
+{% endif %}
+{% endblock %}
