@@ -743,3 +743,41 @@ class TournamentSeries(models.Model):
             used.update(int(c) for c in game["user_picks"].values())
             used.update(int(c) for c in game["opponent_picks"].values())
         return used
+
+
+# --------------------------------------------------------------------- Quiz
+class QuizAttempt(models.Model):
+    """Le quiz d'un joueur du site sur une période de 4 h (cards/quiz.py).
+
+    questions : la liste des 3 questions, réponses comprises (jamais
+    envoyées telles quelles au navigateur) : {kind, text, options: [{id,
+    label, sub}], answer: [ids], pick (nombre à choisir), attempts, picked,
+    result}."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE, related_name="quizzes"
+    )
+    period_start = models.DateTimeField("période")
+    questions = models.JSONField("questions", default=list)
+    score = models.PositiveSmallIntegerField("bonnes réponses", default=0)
+    finished_at = models.DateTimeField("terminé le", null=True, blank=True)
+    reward_rarity = models.ForeignKey(Rarity, verbose_name="rareté gagnée", on_delete=models.PROTECT, null=True,
+                                      blank=True, related_name="+")
+    reward_choices = models.ManyToManyField(Card, verbose_name="cartes proposées", blank=True, related_name="+")
+    chosen = models.ForeignKey(Card, verbose_name="carte choisie", on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name="+")
+    created_at = models.DateTimeField("commencé le", auto_now_add=True)
+
+    class Meta:
+        verbose_name = "quiz"
+        verbose_name_plural = "quiz"
+        ordering = ["-created_at"]
+        constraints = [models.UniqueConstraint(fields=["user", "period_start"], name="one_quiz_per_period")]
+
+    def __str__(self):
+        return f"{self.user} — {self.period_start:%d/%m %H:%M} ({self.score}/3)"
+
+    @property
+    def current(self) -> int | None:
+        """L'indice de la question en cours, None quand tout est répondu."""
+        return next((i for i, q in enumerate(self.questions) if q.get("result") is None), None)

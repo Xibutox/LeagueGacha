@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import tournament_views, views
+from . import quiz_views, tournament_views, views
 
 app_name = "cards"
 
@@ -17,6 +17,10 @@ urlpatterns = [
     path("echange/<int:pk>/choisir/", views.choose_exchange_view, name="choose_exchange"),
     path("equipes/", views.roster_list, name="rosters"),
     path("classement/", views.ranking, name="ranking"),
+    path("quiz/", quiz_views.quiz_page, name="quiz"),
+    path("quiz/commencer/", quiz_views.quiz_start, name="quiz_start"),
+    path("quiz/<int:pk>/repondre/", quiz_views.quiz_answer, name="quiz_answer"),
+    path("quiz/<int:pk>/choisir/", quiz_views.quiz_choose, name="quiz_choose"),
     path("tournoi/", tournament_views.tournament_home, name="tournament"),
     path("tournoi/<int:pk>/defier/", tournament_views.tournament_start, name="tournament_start"),
     path("tournoi/serie/<int:pk>/", tournament_views.tournament_series, name="tournament_series"),

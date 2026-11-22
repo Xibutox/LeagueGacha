@@ -646,7 +646,7 @@ def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
     réserves de boosters (ils retrouvent le stock de départ à leur prochaine
     visite). keep_gifts garde les boosters offerts encore à ouvrir.
     Renvoie le nombre de lignes supprimées par catégorie."""
-    from .models import ExchangeOffer, PackOpening, Roster
+    from .models import ExchangeOffer, PackOpening, QuizAttempt, Roster
 
     users = list(users)
     counts = {
@@ -658,6 +658,7 @@ def reset_progress(users, keep_gifts: bool = False) -> dict[str, int]:
         counts["openings"] = PackOpening.objects.filter(user__in=users).delete()[1].get("cards.PackOpening", 0)
         counts["rosters"] = Roster.objects.filter(user__in=users).delete()[1].get("cards.Roster", 0)
         ExchangeOffer.objects.filter(user__in=users).delete()
+        QuizAttempt.objects.filter(user__in=users).delete()
         stocks = BoosterStock.objects.filter(user__in=users)
         if keep_gifts:
             stocks.filter(bonus=0).delete()

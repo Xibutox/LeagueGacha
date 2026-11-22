@@ -9,8 +9,8 @@
   {# Les polices ne bloquent pas l'affichage : la page s'affiche tout de suite, les polices suivent. #}
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=20">
-  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=20">
+  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=21">
+  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=21">
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -29,6 +29,7 @@
         <a href="{% url 'cards:collection' %}" class="tab{% if section == 'collection' or section == 'card_detail' %} is-active{% endif %}">Collection</a>
         <a href="{% url 'cards:rosters' %}" class="tab{% if section == 'rosters' or section == 'roster_new' or section == 'roster_edit' %} is-active{% endif %}">Équipes</a>
       {% endif %}
+      <a href="{% url 'cards:quiz' %}" class="tab{% if section|slice:":4" == 'quiz' %} is-active{% endif %}">Quiz</a>
       <a href="{% url 'cards:tournament' %}" class="tab{% if section|slice:":10" == 'tournament' %} is-active{% endif %}">Tournoi</a>
       <a href="{% url 'cards:ranking' %}" class="tab{% if section == 'ranking' %} is-active{% endif %}">Classement</a>
     </nav>
@@ -58,7 +59,7 @@
     Données <a href="https://lol.fandom.com" target="_blank" rel="noopener">Leaguepedia</a> (CC BY-SA) et Data Dragon.
     Projet de fan, non affilié à Riot Games.{% if app_version %} · <span class="version">{{ app_version }}</span>{% endif %}
   </footer>
-  <script src="{% static 'js/countdown.js' %}?v=20" defer></script>
+  <script src="{% static 'js/countdown.js' %}?v=21" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

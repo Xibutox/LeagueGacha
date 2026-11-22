@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Quiz — LeagueGacha{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Quiz</h1>
+    <p>3 questions sur l'histoire de l'esport, un nouveau quiz toutes les {{ period_hours }} heures.
+      3 bonnes réponses : une carte rare au choix parmi 5. Sinon : une commune au choix parmi 3, ou une commune au hasard si aucune bonne réponse.</p>
+  </div>
+</div>
+
+{% if not attempt %}
+  <div class="quiz-card quiz-intro">
+    <ol class="quiz-steps">
+      <li><b>Le vainqueur</b> : qui a remporté ce tournoi ? Tu as droit à une erreur.</li>
+      <li><b>Le roster</b> : retrouve les 5 joueurs d'une équipe du podium d'un MSI, d'un First Stand ou des Worlds.</li>
+      <li><b>La carrière</b> : dans quelle équipe ce joueur a-t-il joué le plus de parties ?</li>
+    </ol>
+    <form method="post" action="{% url 'cards:quiz_start' %}">{% csrf_token %}
+      <button class="btn btn-gold btn-big" type="submit">Commencer le quiz</button>
+    </form>
+  </div>
+{% else %}
+  <div class="quiz-progress" aria-label="Avancement">
+    {% for q in attempt.questions %}
+      <span class="quiz-dot{% if q.result == True %} ok{% elif q.result == False %} ko{% elif forloop.counter == number and not attempt.finished_at %} now{% endif %}">{{ q.title }}</span>
+    {% endfor %}
+  </div>
+
+  {% if last %}
+    {% with q=last %}
+    <div class="quiz-feedback {% if q.result == True %}ok{% elif q.result == False %}ko{% else %}retry{% endif %}" role="status">
+      {% if q.result == True %}<b>Bonne réponse !</b>
+      {% elif q.result == False %}<b>Raté.</b> La bonne réponse :
+        {% for o in q.options %}{% if o.id in q.answer %}<span class="quiz-answer">{{ o.label }}</span>{% endif %}{% endfor %}
+      {% else %}<b>Ce n'est pas ça</b> : il te reste un essai.{% endif %}
+      {% if q.detail and q.result != None %}<small class="muted">({% for d in q.detail %}{{ d.team }} : {{ d.games }} partie{{ d.games|pluralize }}{% if not forloop.last %}, {% endif %}{% endfor %})</small>{% endif %}
+    </div>
+    {% endwith %}
+  {% endif %}
+
+  {% if question and not attempt.finished_at %}
+    <form method="post" action="{% url 'cards:quiz_answer' attempt.pk %}" class="quiz-card" data-pick="{{ question.pick }}">{% csrf_token %}
+      <p class="quiz-kicker">Question {{ number }} sur 3 · {{ question.title }}{% if question.attempts > 1 %} · {{ question.attempts }} essais{% endif %}</p>
+      <h2 class="quiz-question">{{ question.text }}</h2>
+      {% if question.pick > 1 %}<p class="small muted">Coche {{ question.pick }} joueurs.</p>{% endif %}
+      <div class="quiz-options{% if question.pick > 1 %} many{% endif %}">
+        {% for o in question.options %}
+          {% with tried=question.picked %}
+          <label class="quiz-option">
+            <input type="{% if question.pick > 1 %}checkbox{% else %}radio{% endif %}" name="choix" value="{{ o.id }}" {% if question.pick == 1 %}required{% endif %}>
+            <span><b>{{ o.label }}</b>{% if o.sub %}<small>{{ o.sub }}</small>{% endif %}</span>
+          </label>
+          {% endwith %}
+        {% endfor %}
+      </div>
+      <button class="btn btn-gold" type="submit">Valider</button>
+    </form>
+  {% endif %}
+
+  {% if attempt.finished_at %}
+    <div class="quiz-card quiz-end">
+      <h2>{{ attempt.score }} bonne{{ attempt.score|pluralize }} réponse{{ attempt.score|pluralize }} sur 3</h2>
+      <ul class="quiz-recap">
+        {% for q in attempt.questions %}
+          <li class="{% if q.result %}ok{% else %}ko{% endif %}"><b>{{ q.title }}</b> — {{ q.text }}
+            <span class="muted">Réponse : {% for o in q.options %}{% if o.id in q.answer %}{{ o.label }}{% if q.answer|length > 1 %} {% endif %}{% endif %}{% endfor %}</span></li>
+        {% endfor %}
+      </ul>
+      {% if attempt.chosen %}
+        <p>{{ attempt.chosen.player.ign }} a rejoint ta collection en {{ attempt.reward_rarity.name|lower }}.</p>
+      {% else %}
+        <p>Choisis ta carte {{ attempt.reward_rarity.name|lower }} :</p>
+      {% endif %}
+      <p class="muted">Prochain quiz dans <time data-countdown data-reload datetime="{{ next_at|date:'c' }}"></time>.</p>
+    </div>
+    <div class="exchange-grid">
+      {% for card in choices %}
+        <form method="post" action="{% url 'cards:quiz_choose' attempt.pk %}" class="exchange-choice{% if attempt.chosen_id == card.pk %} is-chosen{% elif attempt.chosen %} is-dimmed{% endif %}">{% csrf_token %}
+          <input type="hidden" name="card" value="{{ card.pk }}">
+          {% include "cards/_card.html" with card=card rarity=attempt.reward_rarity %}
+          <p class="small muted">{% if card.owned %}Déjà {{ card.owned }} exemplaire{{ card.owned|pluralize }} à toi{% else %}Nouveau joueur pour toi{% endif %}</p>
+          {% if not attempt.chosen %}<button class="btn btn-gold" type="submit">Prendre {{ card.player.ign }}</button>{% endif %}
+        </form>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

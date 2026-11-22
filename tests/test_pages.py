@@ -15,6 +15,7 @@ from cards.models import (
     PackOpening,
     PackOpeningCard,
     Portal,
+    QuizAttempt,
     Tournament as GameTournament,
     TournamentRun,
     TournamentSeries,
@@ -71,6 +72,7 @@ class TestEveryPage(PageSweep):
             "cards.boostergift": BoosterGift.objects.create(user=admin_user, booster=booster, quantity=2),
             "cards.exchangeoffer": ExchangeOffer.objects.create(
                 user=admin_user, given_card=card, given_rarity=Rarity.objects.last(), rarity=Rarity.objects.first()),
+            "cards.quizattempt": QuizAttempt.objects.create(user=admin_user, period_start=opening.opened_at),
             "cards.portal": Portal.objects.create(
                 booster=booster, starts_at=opening.opened_at, ends_at=opening.opened_at + timedelta(days=1)),
             "cards.tournament": (game_tournament := GameTournament.objects.create(
@@ -110,6 +112,10 @@ class TestEveryPage(PageSweep):
         "cards:tournament_series": (404,),
         "cards:tournament_start": (405,),
         "cards:tournament_action": (405,),
+        "cards:quiz_start": (405,),
+        "cards:quiz_answer": (405,),
+        "cards:quiz_choose": (405,),
+        "site:cards_quizattempt_add": (403,),
         "site:cards_tournamentseries_add": (403,),
         # Une équipe n'est visible que de son propriétaire ; supprimer = POST.
         "cards:roster_edit": (404,),
@@ -124,6 +130,8 @@ class TestEveryPage(PageSweep):
             return records["cards.packopening"].pk
         if url_name in {"cards:exchange_offer", "cards:choose_exchange"}:
             return records["cards.exchangeoffer"].pk
+        if url_name in {"cards:quiz_answer", "cards:quiz_choose"}:
+            return records["cards.quizattempt"].pk
         if url_name == "cards:tournament_start":
             return records["cards.tournament"].pk
         if url_name in {"cards:tournament_series", "cards:tournament_action"}:

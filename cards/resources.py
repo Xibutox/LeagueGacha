@@ -26,6 +26,7 @@ from generic.sites import (
 from .form_pages import GiveBoostersPage, InitBoostersPage, ResetProgressPage
 from .models import (
     ExchangeOffer,
+    QuizAttempt,
     Tournament,
     TournamentSeries,
     Portal,
@@ -779,6 +780,26 @@ class TournamentSeriesResource(ModelResource):
     ordering = ("-created_at",)
     readonly_fields = ("run", "step", "team", "status", "opponent", "opponent_rarity", "lineup",
                        "lineup_rarities", "games", "wins", "losses", "reward_card", "reward_rarity", "finished_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(QuizAttempt)
+class QuizAttemptResource(ModelResource):
+    icon = "quiz"
+    group = PLAYERS
+    order = 7
+    label_plural = _("quiz")
+    description = _("Les quiz joués (un toutes les 4 h par joueur), leurs questions et les cartes gagnées.")
+    history = False
+
+    list_display = ("created_at", "user", "score", "reward_rarity", "chosen", "finished_at")
+    list_select_related = ("user", "reward_rarity", "chosen__player", "chosen__split")
+    search_fields = ("user__username",)
+    ordering = ("-created_at",)
+    readonly_fields = ("user", "period_start", "questions", "score", "finished_at", "reward_rarity",
+                       "reward_choices", "chosen")
 
     def has_add_permission(self, request):
         return False
