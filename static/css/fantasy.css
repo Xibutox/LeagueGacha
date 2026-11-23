@@ -1,0 +1,57 @@
+/* La Fantasy League. */
+.fy-head { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 18px; }
+.fy-title { margin: 0; }
+.fy-views { display: flex; gap: 6px; flex-wrap: wrap; }
+.fy-views a { padding: 6px 12px; border: 1px solid var(--steel); color: var(--muted); font: 600 .95rem/1 var(--display); }
+.fy-views a:hover { color: var(--text); text-decoration: none; }
+.fy-views a.is-active { color: #2a1c03; background: var(--gold); border-color: var(--gold); }
+.fy-team-grid, .fy-week-grid, .fy-rank-grid, .fy-rules { display: grid; gap: 20px; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); align-items: start; }
+@media (max-width: 900px) { .fy-team-grid, .fy-week-grid, .fy-rank-grid, .fy-rules { grid-template-columns: 1fr; } }
+.fy-builder-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.fy-warn { border-left: 3px solid var(--gold); padding: 6px 12px; background: rgba(226, 179, 90, .08); }
+.fy-slots { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
+.fy-slot { display: grid; grid-template-columns: 92px 40px minmax(0, 1fr) auto; align-items: center; gap: 10px;
+  background: var(--rift-2); border: 1px solid var(--steel); padding: 6px 10px; }
+.fy-slot.is-sub { border-style: dashed; }
+.fy-slot.is-dup { border-color: var(--danger); }
+.fy-slot-role { font: 700 1rem/1 var(--display); text-transform: none; color: var(--hextech); }
+.fy-photo-box { width: 40px; height: 40px; background: var(--abyss); }
+.fy-pick { min-width: 0; }
+.fy-slot select { width: 100%; min-width: 0; padding: 8px; background: var(--abyss); color: var(--text); border: 1px solid var(--steel); font: inherit; }
+.fy-photo { display: block; width: 40px; height: 40px; object-fit: cover; object-position: top; visibility: hidden; }
+.fy-captain { display: inline-flex; gap: 4px; align-items: center; font: 700 1rem/1 var(--display); color: var(--gold); cursor: pointer; }
+.fy-sub-note { white-space: nowrap; }
+.fy-budget { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto; align-items: center; gap: 14px; margin: 8px 0 14px; }
+.fy-meter { height: 8px; background: var(--abyss); border: 1px solid var(--steel); }
+.fy-meter span { display: block; height: 100%; background: var(--hextech); transition: width .2s; }
+.fy-budget.is-over .fy-meter span { background: var(--danger); }
+.fy-budget.is-over #fy-cost { color: var(--danger); }
+.fy-lineup { list-style: none; margin: 8px 0; padding: 0; }
+.fy-lineup li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--steel); }
+.fy-lineup li.is-replaced .fy-name { font-style: italic; }
+.fy-lineup abbr { color: var(--gold); text-decoration: none; }
+.fy-pts { font: 700 1.15rem/1 var(--display); }
+.fy-total { font: 600 1.2rem/1.2 var(--display); }
+.fy-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+.fy-table th, .fy-table td { padding: 8px 10px; border-bottom: 1px solid var(--steel); text-align: left; vertical-align: middle; }
+.fy-table thead th { color: var(--muted); font: 600 .9rem/1 var(--display); }
+.fy-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.fy-table tr.is-me { background: rgba(63, 208, 224, .08); }
+.fy-cell-player { display: inline-flex; align-items: center; gap: 8px; font-weight: 600; }
+.fy-cell-player img { width: 28px; height: 28px; object-fit: cover; object-position: top; }
+.fy-games { display: flex; gap: 6px; flex-wrap: wrap; }
+.fy-game { font-size: .85rem; padding: 2px 6px; border: 1px solid var(--steel); color: var(--muted); white-space: nowrap; }
+.fy-game.is-win { border-color: rgba(82, 214, 138, .5); color: var(--text); }
+.fy-game em { color: var(--gold); font-style: normal; margin-left: 4px; }
+.fy-mine { margin-bottom: 20px; }
+.fy-day h3 { font-size: 1rem; color: var(--muted); margin: 14px 0 6px; }
+.fy-day ul { list-style: none; margin: 0; padding: 0; }
+.fy-match { display: grid; grid-template-columns: 1fr auto 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px solid var(--steel); }
+.fy-match span:last-child { text-align: right; }
+.fy-standings { margin: 0; padding-left: 1.6em; }
+.fy-standings li { padding: 3px 0; }
+.fy-standings li span:last-child { float: right; }
+.fy-tier { font: 700 .85rem/1 var(--display); padding: 3px 8px; }
+.fy-tier.is-or { background: var(--gold); color: #2a1c03; }
+.fy-tier.is-argent { background: #c9d3e6; color: #1a2033; }
+.fy-tier.is-bronze { background: #b87a4b; color: #1d1007; }

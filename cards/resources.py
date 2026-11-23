@@ -28,6 +28,9 @@ from .models import (
     ExchangeOffer,
     QuizAttempt,
     Duel,
+    FantasyCompetition,
+    FantasyLineup,
+    FantasyWeek,
     FailleAchievement,
     FailleRun,
     Supporter,
@@ -905,6 +908,64 @@ class DuelResource(ModelResource):
     readonly_fields = ("challenger", "opponent", "meta", "lineup_a", "lineup_b", "rarities_a", "rarities_b", "games",
                        "draft", "wins_a", "wins_b", "auto_a", "auto_b", "missed_a", "missed_b", "deadline", "winner",
                        "forfeit", "finished_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(FantasyCompetition)
+class FantasyCompetitionResource(ModelResource):
+    icon = "sports_score"
+    group = GAME
+    order = 20
+    label_plural = _("compétitions fantasy")
+    description = _(
+        "Les compétitions de la Fantasy, créées d'après les dates des tournois importés (une par split de ligue "
+        "majeure et par tournoi international) et l'international fictif de l'intersaison. Les dates se corrigent ici."
+    )
+    history = False
+
+    list_display = ("name", "kind", "start", "end", "rewarded")
+    list_filter = ("kind",)
+    search_fields = ("name",)
+    ordering = ("-start",)
+    fields = ("name", "kind", "league", "split", "tournaments", "start", "end")
+    autocomplete_fields = ("league", "split", "tournaments")
+
+
+@register(FantasyWeek)
+class FantasyWeekResource(ModelResource):
+    icon = "date_range"
+    group = GAME
+    order = 21
+    label_plural = _("semaines fantasy")
+    description = _("Les semaines de la Fantasy (du mercredi au mardi) : état, plafond, équipe idéale.")
+    history = False
+
+    list_display = ("competition", "number", "start", "status", "cap", "ideal_score")
+    list_filter = ("status",)
+    list_select_related = ("competition",)
+    ordering = ("-start",)
+    readonly_fields = ("competition", "number", "start", "status", "ideal", "ideal_score", "cap", "scored_at")
+
+    def has_add_permission(self, request):
+        return False
+
+
+@register(FantasyLineup)
+class FantasyLineupResource(ModelResource):
+    icon = "groups"
+    group = PLAYERS
+    order = 12
+    label_plural = _("équipes fantasy")
+    description = _("Les équipes de la Fantasy, une par joueur du site et par semaine.")
+    history = False
+
+    list_display = ("week", "user", "points", "tier", "cost")
+    list_select_related = ("week", "week__competition", "user")
+    search_fields = ("user__username",)
+    ordering = ("-week__start", "-points")
+    readonly_fields = ("user", "week", "players", "captain", "cost", "points", "detail", "tier")
 
     def has_add_permission(self, request):
         return False

@@ -967,3 +967,119 @@ class Duel(models.Model):
             for side in ("a", "b"):
                 used |= {int(c) for c in (game.get(f"picks_{side}") or {}).values()}
         return used
+
+
+# --------------------------------------------------------------------- Fantasy
+class FantasyCompetition(models.Model):
+    """Une compétition fantasy (cards/fantasy.py) : le split d'une ligue
+    majeure, un tournoi international de Riot, ou un international fictif
+    aux matchs simulés pendant l'intersaison. Semaines du mercredi au
+    mardi, heure de Paris."""
+
+    class Kind(models.TextChoices):
+        LEAGUE = "league", "ligue"
+        INTERNATIONAL = "international", "international"
+        FICTIONAL = "fictional", "international fictif"
+
+    kind = models.CharField("sorte", max_length=20, choices=Kind.choices)
+    name = models.CharField("nom", max_length=200)
+    slug = models.SlugField(max_length=200, unique=True)
+    league = models.ForeignKey(League, verbose_name="ligue", on_delete=models.SET_NULL, null=True, blank=True,
+                               related_name="+")
+    split = models.ForeignKey(Split, verbose_name="split", on_delete=models.SET_NULL, null=True, blank=True,
+                              related_name="+")
+    tournaments = models.ManyToManyField("esport.Tournament", verbose_name="tournois", blank=True, related_name="+")
+    start = models.DateField("premier mercredi")
+    end = models.DateField("dernier jour")
+    #: International fictif : {"teams": [{id, name, short, rating, players: {poste: id}}], "records": {id: [v, d]}}.
+    state = models.JSONField("état", default=dict, blank=True)
+    rewarded = models.BooleanField("récompenses de fin versées", default=False)
+
+    class Meta:
+        verbose_name = "compétition fantasy"
+        verbose_name_plural = "compétitions fantasy"
+        ordering = ["-start", "name"]
+
+    def __str__(self):
+        return self.name
+
+
+class FantasyWeek(models.Model):
+    class Status(models.TextChoices):
+        OPEN = "open", "ouverte"
+        LOCKED = "locked", "en cours"
+        SCORED = "scored", "comptée"
+
+    competition = models.ForeignKey(FantasyCompetition, verbose_name="compétition", on_delete=models.CASCADE,
+                                    related_name="weeks")
+    number = models.PositiveSmallIntegerField("semaine n°")
+    start = models.DateField("mercredi")
+    status = models.CharField("état", max_length=10, choices=Status.choices, default=Status.OPEN)
+    ideal = models.JSONField("équipe idéale", default=dict, blank=True)
+    ideal_score = models.FloatField("score de l'équipe idéale", default=0)
+    cap = models.FloatField("plafond", default=0)
+    scored_at = models.DateTimeField("comptée le", null=True, blank=True)
+
+    class Meta:
+        verbose_name = "semaine fantasy"
+        verbose_name_plural = "semaines fantasy"
+        ordering = ["competition", "start"]
+        constraints = [models.UniqueConstraint(fields=["competition", "start"], name="unique_fantasy_week")]
+
+    def __str__(self):
+        return f"{self.competition} — semaine {self.number}"
+
+
+class FantasyPlayerWeek(models.Model):
+    """Un joueur pro dans une semaine : son coût, son équipe, ses points."""
+
+    week = models.ForeignKey(FantasyWeek, verbose_name="semaine", on_delete=models.CASCADE, related_name="players")
+    player = models.ForeignKey(Player, verbose_name="joueur", on_delete=models.CASCADE, related_name="+")
+    role = models.CharField("poste", max_length=20)
+    team = models.CharField("équipe", max_length=200, blank=True)
+    cost = models.FloatField("coût", default=0)
+    points = models.FloatField("points", default=0)
+    games = models.JSONField("parties", default=list, blank=True)
+
+    class Meta:
+        verbose_name = "joueur de la semaine fantasy"
+        verbose_name_plural = "joueurs de la semaine fantasy"
+        constraints = [models.UniqueConstraint(fields=["week", "player"], name="unique_fantasy_player_week")]
+
+
+class FantasyLineup(models.Model):
+    """L'équipe d'un utilisateur pour une semaine : {poste: id du joueur, "sub": id}."""
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, verbose_name="joueur du site", on_delete=models.CASCADE,
+                             related_name="fantasy_lineups")
+    week = models.ForeignKey(FantasyWeek, verbose_name="semaine", on_delete=models.CASCADE, related_name="lineups")
+    players = models.JSONField("joueurs", default=dict)
+    captain = models.CharField("capitaine (poste)", max_length=20, blank=True)
+    cost = models.FloatField("coût", default=0)
+    points = models.FloatField("points", default=0)
+    detail = models.JSONField("détail", default=dict, blank=True)
+    tier = models.CharField("palier", max_length=10, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "équipe fantasy"
+        verbose_name_plural = "équipes fantasy"
+        constraints = [models.UniqueConstraint(fields=["user", "week"], name="unique_fantasy_lineup")]
+
+
+class FantasySimMatch(models.Model):
+    """Un Bo3 simulé de l'international fictif. games : [{"winner": "a"|"b",
+    "lines": {id du joueur: id de la vraie partie (GameAppearance)}}]."""
+
+    week = models.ForeignKey(FantasyWeek, verbose_name="semaine", on_delete=models.CASCADE, related_name="matches")
+    day = models.DateField("jour")
+    team_a = models.JSONField("équipe A")
+    team_b = models.JSONField("équipe B")
+    wins_a = models.PositiveSmallIntegerField(default=0)
+    wins_b = models.PositiveSmallIntegerField(default=0)
+    games = models.JSONField("parties", default=list)
+
+    class Meta:
+        verbose_name = "match simulé"
+        verbose_name_plural = "matchs simulés"
+        ordering = ["day", "pk"]

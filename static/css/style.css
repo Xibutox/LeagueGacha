@@ -52,8 +52,9 @@ ul.plain { list-style: none; padding: 0; margin: 0; }
 .brand-name b { color: var(--gold); font-weight: 800; }
 .tabs { display: flex; align-items: stretch; gap: 4px; scrollbar-width: none; }
 .tabs::-webkit-scrollbar { display: none; }
-.tab { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 18px;
+.tab { position: relative; display: flex; align-items: center; gap: 8px; padding: 0 18px; white-space: nowrap;
   font: 600 1.1rem/1 var(--display); color: var(--muted); text-decoration: none; }
+@media (max-width: 1400px) { .tab { padding: 0 11px; } }
 .tab:hover { color: var(--text); text-decoration: none; }
 .tab.is-active { color: var(--text); }
 .tab.is-active::after { content: ""; position: absolute; left: 10px; right: 10px; bottom: -1px; height: 3px;

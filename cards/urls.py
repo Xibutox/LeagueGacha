@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import duel_views, faille_views, quiz_views, tournament_views, views
+from . import duel_views, faille_views, fantasy_views, quiz_views, tournament_views, views
 
 app_name = "cards"
 
@@ -39,6 +39,9 @@ urlpatterns = [
     path("equipes/semaine/", views.weekly_page, name="weekly"),
     path("equipes/semaine/reprendre/", views.weekly_reset, name="weekly_reset"),
     path("equipes/coeur/", views.supporter_set, name="supporter"),
+    path("fantasy/", fantasy_views.fantasy_home, name="fantasy"),
+    path("fantasy/<slug:slug>/", fantasy_views.fantasy_page, name="fantasy_comp"),
+    path("fantasy/<slug:slug>/equipe/", fantasy_views.fantasy_save, name="fantasy_save"),
     path("faille/", faille_views.faille_page, name="faille"),
     path("faille/sauver/", faille_views.faille_sync, name="faille_sync"),
     path("faille/acheter/", faille_views.faille_buy, name="faille_buy"),

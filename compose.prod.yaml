@@ -82,6 +82,15 @@ services:
       migrate:
         condition: service_completed_successfully
 
+  # La Fantasy League : semaines, points, matchs simulés et récompenses,
+  # toutes les 3 h (cards/fantasy.py). Basse priorité, comme les imports.
+  fantasy:
+    <<: *app
+    command: nice -n 10 python manage.py fantasy_tick --boucle
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
   # Les pages : Gunicorn, plusieurs processus en parallèle (WEB_WORKERS,
   # 3 par défaut : de quoi servir plusieurs joueurs à la fois sur un Pi 4).
   # --preload : le code et les gabarits sont chargés une fois, avant de

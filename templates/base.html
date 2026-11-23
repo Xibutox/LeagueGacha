@@ -9,8 +9,9 @@
   {# Les polices ne bloquent pas l'affichage : la page s'affiche tout de suite, les polices suivent. #}
   <link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap" onload="this.onload=null;this.rel='stylesheet'">
   <noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700;800&family=Barlow:wght@400;500;600;700&display=swap"></noscript>
-  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=26">
-  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=26">
+  <link rel="stylesheet" href="{% static 'css/style.css' %}?v=27">
+  <link rel="stylesheet" href="{% static 'css/cards.css' %}?v=27">
+  <link rel="stylesheet" href="{% static 'css/fantasy.css' %}?v=27">
   {% block head %}{% endblock %}
 </head>
 <body class="{% block body_class %}{% endblock %}">
@@ -31,6 +32,7 @@
       {% endif %}
       {% if user.is_authenticated %}<a href="{% url 'cards:faille' %}" class="tab{% if section|slice:":6" == 'faille' %} is-active{% endif %}">La Faille</a>{% endif %}
       <a href="{% url 'cards:quiz' %}" class="tab{% if section|slice:":4" == 'quiz' %} is-active{% endif %}">Quiz</a>
+      <a href="{% url 'cards:fantasy' %}" class="tab{% if section|slice:":7" == 'fantasy' %} is-active{% endif %}">Fantasy</a>
       <a href="{% url 'cards:tournament' %}" class="tab{% if section|slice:":10" == 'tournament' or section|slice:":4" == 'duel' %} is-active{% endif %}">Tournoi{% if user.is_authenticated %}{% with n=duels_waiting %}{% if n %}<span class="tab-count" title="Duels qui t'attendent">{{ n }}</span>{% endif %}{% endwith %}{% endif %}</a>
       <a href="{% url 'cards:ranking' %}" class="tab{% if section == 'ranking' %} is-active{% endif %}">Classement</a>
     </nav>
@@ -60,7 +62,7 @@
     Données <a href="https://lol.fandom.com" target="_blank" rel="noopener">Leaguepedia</a> (CC BY-SA) et Data Dragon.
     Projet de fan, non affilié à Riot Games.{% if app_version %} · <span class="version">{{ app_version }}</span>{% endif %}
   </footer>
-  <script src="{% static 'js/countdown.js' %}?v=26" defer></script>
+  <script src="{% static 'js/countdown.js' %}?v=27" defer></script>
   {% block scripts %}{% endblock %}
 </body>
 </html>

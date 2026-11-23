@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+{% load static %}
+{% block title %}Fantasy{% if comp %} {{ label }}{% endif %} — LeagueGacha{% endblock %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <h1>Fantasy</h1>
+    <p>Aligne 5 joueurs de ta collection : ils marquent des points selon leurs vraies parties de la semaine.
+      La semaine va du mercredi au mardi ; ton équipe se verrouille le mardi à 23:59.</p>
+  </div>
+</div>
+
+{% if not comps %}
+  <section class="panel">
+    <p>Aucune compétition pour le moment : elles s'ouvrent d'après les dates des tournois importés de Leaguepedia.</p>
+  </section>
+{% else %}
+<nav class="subtabs" aria-label="Compétitions">
+  {% for c, name in comps %}
+    <a href="{% url 'cards:fantasy_comp' c.slug %}"{% if c.pk == comp.pk %} class="is-active" aria-current="page"{% endif %}>{{ name }}</a>
+  {% endfor %}
+</nav>
+
+<div class="fy-head">
+  <div>
+    <h2 class="fy-title">{{ comp.name }}</h2>
+    <p class="muted small">
+      {% if current %}Semaine {{ current.number }} en cours, du {{ current.start|date:"j F" }} au mardi suivant.
+      {% elif upcoming %}Commence le {{ comp.start|date:"l j F" }}.
+      {% else %}Terminée.{% endif %}
+      {% if fictional %}Matchs simulés à partir des vraies parties des joueurs.{% endif %}
+    </p>
+  </div>
+  <nav class="fy-views" aria-label="Vue">
+    {% for key, name in views.items %}
+      <a href="?vue={{ key }}"{% if key == view %} class="is-active" aria-current="page"{% endif %}>{{ name }}</a>
+    {% endfor %}
+  </nav>
+</div>
+
+{% if view == "equipe" %}
+<div class="fy-team-grid">
+  {% if upcoming %}
+  <section class="panel fy-builder">
+    <div class="fy-builder-head">
+      <h3>Semaine {{ upcoming.number }} à composer</h3>
+      <p class="muted small">Verrouillage dans <time data-countdown datetime="{{ lock_at|date:'c' }}"></time></p>
+    </div>
+    {% if not user.is_authenticated %}
+      <p><a href="{% url 'login' %}">Connecte-toi</a> pour composer ton équipe avec les joueurs de ta collection.</p>
+    {% else %}
+      {% if missing %}
+        <p class="fy-warn">Il te manque un joueur de cette compétition à ces postes : {{ missing|join:", " }}.
+          Ouvre des boosters pour en trouver : n'importe quelle carte du joueur suffit, peu importe l'année.</p>
+      {% endif %}
+      <form method="post" action="{% url 'cards:fantasy_save' comp.slug %}" id="fy-form">{% csrf_token %}
+        <ul class="fy-slots">
+          {% for role, list in choices %}
+            <li class="fy-slot" data-slot="{{ role }}">
+              <span class="fy-slot-role">{{ role }}</span>
+              <span class="fy-photo-box"><img class="fy-photo" alt="" data-photo></span>
+              <span class="fy-pick"><label class="sr-only" for="fy-{{ role }}">{{ role }}</label>
+              <select name="{{ role }}" id="fy-{{ role }}" data-pick>
+                <option value="">— Choisir —</option>
+                {% for pw in list %}
+                  <option value="{{ pw.player_id }}">{{ pw.player.ign }} · {{ pw.team|default:"?" }} · {{ pw.cost|floatformat:1 }}</option>
+                {% endfor %}
+              </select></span>
+              <label class="fy-captain" title="Capitaine : points ×1,5">
+                <input type="radio" name="captain" value="{{ role }}"{% if captain == role %} checked{% endif %}> C
+              </label>
+            </li>
+          {% endfor %}
+          <li class="fy-slot is-sub" data-slot="sub">
+            <span class="fy-slot-role">Remplaçant</span>
+            <span class="fy-photo-box"><img class="fy-photo" alt="" data-photo></span>
+            <span class="fy-pick"><label class="sr-only" for="fy-sub">Remplaçant</label>
+            <select name="sub" id="fy-sub" data-pick>
+              <option value="">— Choisir —</option>
+              {% for pw in all_choices %}
+                <option value="{{ pw.player_id }}">{{ pw.player.ign }} · {{ pw.role }} · {{ pw.team|default:"?" }} · {{ pw.cost|floatformat:1 }}</option>
+              {% endfor %}
+            </select></span>
+            <span class="fy-sub-note muted small">remplace un titulaire qui ne joue pas</span>
+          </li>
+        </ul>
+        <div class="fy-budget" id="fy-budget">
+          <div><span class="muted small">Coût</span> <b id="fy-cost">0</b> / {{ upcoming.cap|floatformat:1 }}</div>
+          <div class="fy-meter"><span id="fy-meter"></span></div>
+          <div><span class="muted small">Diversité</span> <b id="fy-div">+0 %</b></div>
+        </div>
+        <button class="btn btn-gold" type="submit" id="fy-save">Enregistrer l'équipe</button>
+        <p class="muted small">Le coût d'un joueur est sa moyenne de points sur ses 10 dernières parties.
+          Sans changement de ta part, ton équipe est reprise d'une semaine à l'autre.</p>
+      </form>
+      {{ players_json|json_script:"fy-players" }}
+      {{ picked|json_script:"fy-picked" }}
+    {% endif %}
+  </section>
+  {% endif %}
+
+  <section class="panel fy-live">
+    {% if current %}
+      <h3>Semaine {{ current.number }} en cours</h3>
+      {% if current_slots %}
+        <ul class="fy-lineup">
+          {% for s in current_slots %}
+            <li{% if s.replaced %} class="is-replaced"{% endif %}>
+              <span class="fy-slot-role">{{ s.label }}{% if s.captain %} <abbr title="Capitaine, ×1,5">C</abbr>{% endif %}</span>
+              <span class="fy-name">{% if s.shown %}{{ s.shown.player.ign }} <span class="muted small">{{ s.shown.team }}</span>{% else %}<span class="muted">—</span>{% endif %}
+                {% if s.replaced %}<span class="muted small">(remplace {{ s.pw.player.ign|default:"une place vide" }})</span>{% endif %}</span>
+              <b class="fy-pts">{{ s.points|floatformat:1 }}</b>
+            </li>
+          {% endfor %}
+        </ul>
+        <p class="fy-total">Total <b>{{ current_lineup.points|floatformat:1 }}</b>
+          {% if current_lineup.detail.diversity %}<span class="muted small">dont diversité +{{ current_lineup.detail.diversity }} %</span>{% endif %}</p>
+        <p class="muted small"><a href="?vue=semaine">Le détail des parties</a></p>
+      {% elif user.is_authenticated %}
+        <p class="muted">Tu n'as pas d'équipe cette semaine. Compose celle de la semaine prochaine.</p>
+      {% else %}
+        <p class="muted">Connecte-toi pour suivre ton équipe.</p>
+      {% endif %}
+    {% else %}
+      <h3>Pas encore commencée</h3>
+      <p class="muted">La première semaine commence le {{ comp.start|date:"l j F" }}.</p>
+    {% endif %}
+  </section>
+</div>
+{% endif %}
+
+{% if view == "semaine" %}
+  {% if not shown %}
+    <section class="panel"><p class="muted">Aucune semaine jouée pour le moment.</p></section>
+  {% else %}
+  <div class="fy-week-grid">
+    <section>
+      <div class="strap"><h2>Semaine {{ week.number }}</h2><p>{% if week.status == "scored" %}Comptée{% else %}Points en direct{% endif %}</p></div>
+      {% if slots %}
+        <div class="panel fy-mine">
+          <h3>Ton équipe · {{ lineup.points|floatformat:1 }} pts{% if lineup.tier %} · palier {% if lineup.tier == "or" %}Or{% elif lineup.tier == "argent" %}Argent{% else %}Bronze{% endif %}{% endif %}</h3>
+          <ul class="fy-lineup">
+            {% for s in slots %}
+              <li{% if s.replaced %} class="is-replaced"{% endif %}>
+                <span class="fy-slot-role">{{ s.label }}{% if s.captain %} <abbr title="Capitaine, ×1,5">C</abbr>{% endif %}</span>
+                <span class="fy-name">{{ s.shown.player.ign|default:"—" }}</span>
+                <b class="fy-pts">{{ s.points|floatformat:1 }}</b>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endif %}
+      <table class="fy-table">
+        <caption class="sr-only">Meilleurs joueurs de la semaine</caption>
+        <thead><tr><th scope="col">Joueur</th><th scope="col">Poste</th><th scope="col" class="num">Coût</th><th scope="col">Parties</th><th scope="col" class="num">Points</th></tr></thead>
+        <tbody>
+        {% for pw in top %}
+          <tr>
+            <th scope="row"><span class="fy-cell-player">{% if pw.photo %}<img src="{{ pw.photo }}" alt="" loading="lazy">{% endif %}{{ pw.player.ign }} <span class="muted small">{{ pw.team }}</span></span></th>
+            <td>{{ pw.role }}</td>
+            <td class="num">{{ pw.cost|floatformat:1 }}</td>
+            <td class="fy-games">
+              {% for g in pw.games %}
+                <span class="fy-game{% if g.win %} is-win{% endif %}" title="{% for label, v in g.parts %}{{ label }} : {{ v }}&#10;{% endfor %}{% if g.bonus %}surperformance : +{{ g.bonus }}{% endif %}">{{ g.kills }}/{{ g.deaths }}/{{ g.assists }} · {{ g.total|floatformat:1 }}{% if g.bonus %}<em>+{{ g.bonus|floatformat:1 }}</em>{% endif %}</span>
+              {% endfor %}
+            </td>
+            <td class="num"><b>{{ pw.points|floatformat:1 }}</b></td>
+          </tr>
+        {% empty %}
+          <tr><td colspan="5" class="muted">Aucune partie jouée {% if fictional %}dévoilée {% endif %}pour l'instant.</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </section>
+    {% if fictional %}
+    <aside>
+      <div class="strap"><h2>Matchs</h2><p>Résultats dévoilés chaque jour à 18:00</p></div>
+      {% for d in days %}
+        <div class="fy-day">
+          <h3>{{ d.day|date:"l j F" }}</h3>
+          <ul>
+            {% for m in d.matches %}
+              <li class="fy-match">
+                <span>{{ m.team_a.short|default:m.team_a.name }}</span>
+                {% if d.revealed %}<b>{{ m.wins_a }} – {{ m.wins_b }}</b>{% else %}<span class="muted">vs</span>{% endif %}
+                <span>{{ m.team_b.short|default:m.team_b.name }}</span>
+              </li>
+            {% endfor %}
+          </ul>
+        </div>
+      {% endfor %}
+      <div class="strap"><h2>Classement</h2></div>
+      <ol class="fy-standings">
+        {% for t in standings %}<li><span>{{ t.name }}</span><span class="muted">{{ t.wins }}–{{ t.losses }}</span></li>{% endfor %}
+      </ol>
+    </aside>
+    {% endif %}
+  </div>
+  {% endif %}
+{% endif %}
+
+{% if view == "classement" %}
+<div class="fy-rank-grid">
+  <section>
+    <div class="strap"><h2>Saison</h2><p>Les 3 premiers gagnent 5, 4 et 3 boosters</p></div>
+    <table class="fy-table">
+      <thead><tr><th scope="col" class="num">#</th><th scope="col">Joueur</th><th scope="col" class="num">Points</th></tr></thead>
+      <tbody>
+      {% for r in season %}
+        <tr{% if r.user == user %} class="is-me"{% endif %}><td class="num">{{ r.rank }}</td><th scope="row">{{ r.user.username }}</th><td class="num">{{ r.points|floatformat:1 }}</td></tr>
+      {% empty %}<tr><td colspan="3" class="muted">Personne n'a encore marqué.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+  <section>
+    <div class="strap"><h2>Semaine {{ shown.number|default:"" }}</h2>{% if ideal_score %}<p>Équipe idéale : {{ ideal_score|floatformat:1 }} pts</p>{% endif %}</div>
+    <table class="fy-table">
+      <thead><tr><th scope="col" class="num">#</th><th scope="col">Joueur</th><th scope="col">Palier</th><th scope="col" class="num">Points</th></tr></thead>
+      <tbody>
+      {% for l in weekly %}
+        <tr{% if l.user == user %} class="is-me"{% endif %}><td class="num">{{ l.rank }}</td><th scope="row">{{ l.user.username }}</th>
+          <td>{% if l.tier %}<span class="fy-tier is-{{ l.tier }}">{% if l.tier == "or" %}Or{% elif l.tier == "argent" %}Argent{% else %}Bronze{% endif %}</span>{% endif %}</td>
+          <td class="num">{{ l.points|floatformat:1 }}</td></tr>
+      {% empty %}<tr><td colspan="4" class="muted">Aucune équipe cette semaine.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </section>
+</div>
+{% endif %}
+
+{% if view == "regles" %}
+<div class="fy-rules">
+  <section class="panel">
+    <h3>Points d'une partie</h3>
+    <table class="fy-table">
+      <thead><tr><th scope="col">Action</th><th scope="col" class="num">Points</th></tr></thead>
+      <tbody>{% for label, pts in scale %}<tr><th scope="row">{{ label }}</th><td class="num">{{ pts }}</td></tr>{% endfor %}</tbody>
+    </table>
+    <h3>Bonus de surperformance</h3>
+    <p>Chaque partie est comparée à la moyenne habituelle du joueur (ses 10 dernières parties, la même que son coût).
+      S'il fait mieux, il gagne la moitié de l'écart, au plus +{{ rules.OVER_MAX|floatformat:0 }} par partie. Jamais de malus.
+      Un joueur à 15 de moyenne qui fait une partie à 45 gagne +10 ; une star à 30 qui fait 34 gagne +2.</p>
+  </section>
+  <section class="panel">
+    <h3>Ton équipe</h3>
+    <ul>
+      <li>5 titulaires, un par poste, et 1 remplaçant de n'importe quel poste, tous dans ta collection (n'importe quelle carte du joueur, peu importe l'année ou l'équipe).</li>
+      <li>Le remplaçant prend la place d'un titulaire qui n'a joué aucune partie de la semaine.</li>
+      <li>Le capitaine compte ×1,5.</li>
+      <li>La somme des coûts ne dépasse pas le plafond : 6 × la moyenne de la compétition × 1,1.</li>
+      <li>Diversité : +5 % par équipe réelle différente parmi les titulaires, au-delà de la première (jusqu'à +20 % avec 5 équipes).</li>
+      <li>La semaine va du mercredi au mardi. L'équipe se verrouille le mardi à 23:59 ; ce que tu modifies ensuite vaut pour la semaine suivante.</li>
+    </ul>
+    <h3>Récompenses</h3>
+    <table class="fy-table">
+      <thead><tr><th scope="col">Palier</th><th scope="col">Score ≥</th><th scope="col" class="num">Boosters</th></tr></thead>
+      <tbody>{% for name, pct, n in tiers %}<tr><th scope="row">{{ name }}</th><td>{{ pct }} % de l'équipe idéale</td><td class="num">{{ n }}</td></tr>{% endfor %}</tbody>
+    </table>
+    <p class="muted small">Versés le mercredi matin, en boosters de la ligue de la compétition (le booster de base pour l'international).
+      En fin de saison, les 3 premiers gagnent 5, 4 et 3 boosters.</p>
+  </section>
+</div>
+{% endif %}
+{% endif %}
+{% endblock %}
+{% block scripts %}<script src="{% static 'js/fantasy.js' %}?v=27" defer></script>{% endblock %}

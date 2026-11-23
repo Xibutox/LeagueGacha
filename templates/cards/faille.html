@@ -1,7 +1,7 @@
 {% extends "base.html" %}
 {% load static %}
 {% block title %}La Faille — LeagueGacha{% endblock %}
-{% block head %}<link rel="stylesheet" href="{% static 'css/faille.css' %}?v=26">{% endblock %}
+{% block head %}<link rel="stylesheet" href="{% static 'css/faille.css' %}?v=27">{% endblock %}
 {% block content %}
 {% if not ready %}
   <div class="page-head"><div><h1>La Faille</h1><p>Le mini-jeu n'est pas encore prêt : ses objets et ses images n'ont pas été importés.</p></div></div>
@@ -97,6 +97,6 @@
 {% endif %}
 {% endblock %}
 {% block scripts %}{% if ready %}
-<script src="{% static 'js/faille-engine.js' %}?v=26"></script>
-<script src="{% static 'js/faille.js' %}?v=26"></script>
+<script src="{% static 'js/faille-engine.js' %}?v=27"></script>
+<script src="{% static 'js/faille.js' %}?v=27"></script>
 {% endif %}{% endblock %}

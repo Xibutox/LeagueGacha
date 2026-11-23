@@ -7,6 +7,9 @@ import pytest
 
 from cards.models import (
     Duel,
+    FantasyCompetition,
+    FantasyLineup,
+    FantasyWeek,
     FailleAchievement,
     FailleData,
     FailleRun,
@@ -95,6 +98,12 @@ class TestEveryPage(PageSweep):
             "cards.faillerun": FailleRun.objects.create(user=admin_user, week=opening.opened_at.date(), state={}),
             "cards.failleachievement": FailleAchievement.objects.create(user=admin_user, code="weeks_1"),
             "cards.duel": Duel.objects.create(challenger=admin_user, opponent=admin_user),
+            "cards.fantasycompetition": (fantasy_comp := FantasyCompetition.objects.create(
+                kind="fictional", name="Fantasy test", slug="fantasy-test", start=opening.opened_at.date(),
+                end=opening.opened_at.date() + timedelta(days=20))),
+            "cards.fantasyweek": (fantasy_week := FantasyWeek.objects.create(
+                competition=fantasy_comp, number=1, start=opening.opened_at.date())),
+            "cards.fantasylineup": FantasyLineup.objects.create(user=admin_user, week=fantasy_week),
         }
 
     #: Les écrans en lecture seule n'ont pas de formulaire d'ajout.
@@ -150,6 +159,10 @@ class TestEveryPage(PageSweep):
         "site:cards_faillerun_add": (403,),
         "site:cards_failleachievement_add": (403,),
         "site:cards_weeklymeta_add": (403,),
+        "site:cards_fantasyweek_add": (403,),
+        "site:cards_fantasylineup_add": (403,),
+        "cards:fantasy": (200, 302),
+        "cards:fantasy_save": (405,),
     }
 
     def value_for(self, url_name, argument, records):
@@ -172,6 +185,8 @@ class TestEveryPage(PageSweep):
             return records["cards.card"].pk
         if url_name in {"cards:duel", "cards:duel_state", "cards:duel_respond", "cards:duel_cancel", "cards:duel_action"}:
             return records["cards.duel"].pk
+        if url_name in {"cards:fantasy_comp", "cards:fantasy_save"}:
+            return records["cards.fantasycompetition"].slug
         if url_name in {"cards:roster_edit", "cards:roster_delete"}:
             return records["cards.roster"].pk
         return super().value_for(url_name, argument, records)
