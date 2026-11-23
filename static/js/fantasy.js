@@ -25,7 +25,7 @@
       if (p) {
         cost += p.cost;
         used[sel.value] = (used[sel.value] || 0) + 1;
-        if (sel.name !== "sub" && p.team) teams[p.team] = true;
+        if (p.team) teams[p.team] = true;
         if (p.photo) { img.src = p.photo; img.style.visibility = "visible"; } else { img.style.visibility = "hidden"; }
       } else {
         img.style.visibility = "hidden";

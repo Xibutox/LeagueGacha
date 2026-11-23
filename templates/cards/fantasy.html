@@ -71,18 +71,6 @@
               </label>
             </li>
           {% endfor %}
-          <li class="fy-slot is-sub" data-slot="sub">
-            <span class="fy-slot-role">Remplaçant</span>
-            <span class="fy-photo-box"><img class="fy-photo" alt="" data-photo></span>
-            <span class="fy-pick"><label class="sr-only" for="fy-sub">Remplaçant</label>
-            <select name="sub" id="fy-sub" data-pick>
-              <option value="">— Choisir —</option>
-              {% for pw in all_choices %}
-                <option value="{{ pw.player_id }}">{{ pw.player.ign }} · {{ pw.role }} · {{ pw.team|default:"?" }} · {{ pw.cost|floatformat:1 }}</option>
-              {% endfor %}
-            </select></span>
-            <span class="fy-sub-note muted small">remplace un titulaire qui ne joue pas</span>
-          </li>
         </ul>
         <div class="fy-budget" id="fy-budget">
           <div><span class="muted small">Coût</span> <b id="fy-cost">0</b> / {{ upcoming.cap|floatformat:1 }}</div>
@@ -105,10 +93,9 @@
       {% if current_slots %}
         <ul class="fy-lineup">
           {% for s in current_slots %}
-            <li{% if s.replaced %} class="is-replaced"{% endif %}>
+            <li>
               <span class="fy-slot-role">{{ s.label }}{% if s.captain %} <abbr title="Capitaine, ×1,5">C</abbr>{% endif %}</span>
-              <span class="fy-name">{% if s.shown %}{{ s.shown.player.ign }} <span class="muted small">{{ s.shown.team }}</span>{% else %}<span class="muted">—</span>{% endif %}
-                {% if s.replaced %}<span class="muted small">(remplace {{ s.pw.player.ign|default:"une place vide" }})</span>{% endif %}</span>
+              <span class="fy-name">{% if s.shown %}{{ s.shown.player.ign }} <span class="muted small">{{ s.shown.team }}</span>{% else %}<span class="muted">—</span>{% endif %}</span>
               <b class="fy-pts">{{ s.points|floatformat:1 }}</b>
             </li>
           {% endfor %}
@@ -141,7 +128,7 @@
           <h3>Ton équipe · {{ lineup.points|floatformat:1 }} pts{% if lineup.tier %} · palier {% if lineup.tier == "or" %}Or{% elif lineup.tier == "argent" %}Argent{% else %}Bronze{% endif %}{% endif %}</h3>
           <ul class="fy-lineup">
             {% for s in slots %}
-              <li{% if s.replaced %} class="is-replaced"{% endif %}>
+              <li>
                 <span class="fy-slot-role">{{ s.label }}{% if s.captain %} <abbr title="Capitaine, ×1,5">C</abbr>{% endif %}</span>
                 <span class="fy-name">{{ s.shown.player.ign|default:"—" }}</span>
                 <b class="fy-pts">{{ s.points|floatformat:1 }}</b>
@@ -244,11 +231,10 @@
   <section class="panel">
     <h3>Ton équipe</h3>
     <ul>
-      <li>5 titulaires, un par poste, et 1 remplaçant de n'importe quel poste, tous dans ta collection (n'importe quelle carte du joueur, peu importe l'année ou l'équipe).</li>
-      <li>Le remplaçant prend la place d'un titulaire qui n'a joué aucune partie de la semaine.</li>
+      <li>5 joueurs, un par poste, tous dans ta collection (n'importe quelle carte du joueur, peu importe l'année ou l'équipe).</li>
       <li>Le capitaine compte ×1,5.</li>
-      <li>La somme des coûts ne dépasse pas le plafond : 6 × la moyenne de la compétition × 1,1.</li>
-      <li>Diversité : +5 % par équipe réelle différente parmi les titulaires, au-delà de la première (jusqu'à +20 % avec 5 équipes).</li>
+      <li>La somme des coûts ne dépasse pas le plafond : 5 × la moyenne de la compétition × 1,1.</li>
+      <li>Diversité : +5 % par équipe réelle différente dans ton équipe, au-delà de la première (jusqu'à +20 % avec 5 équipes).</li>
       <li>La semaine va du mercredi au mardi. L'équipe se verrouille le mardi à 23:59 ; ce que tu modifies ensuite vaut pour la semaine suivante.</li>
     </ul>
     <h3>Récompenses</h3>
@@ -263,4 +249,4 @@
 {% endif %}
 {% endif %}
 {% endblock %}
-{% block scripts %}<script src="{% static 'js/fantasy.js' %}?v=27" defer></script>{% endblock %}
+{% block scripts %}<script src="{% static 'js/fantasy.js' %}?v=28" defer></script>{% endblock %}

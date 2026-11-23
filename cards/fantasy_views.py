@@ -18,7 +18,7 @@ from .models import ROLES, Card, FantasyCompetition, FantasyLineup, FantasyWeek
 from .services import GameError
 
 VIEWS = {"equipe": "Mon équipe", "semaine": "Semaine", "classement": "Classement", "regles": "Règles"}
-ROLE_LABELS = {"Top": "Top", "Jungle": "Jungle", "Mid": "Mid", "Bot": "Bot", "Support": "Support", "sub": "Remplaçant"}
+ROLE_LABELS = {"Top": "Top", "Jungle": "Jungle", "Mid": "Mid", "Bot": "Bot", "Support": "Support"}
 #: Les points en direct sont recalculés au plus toutes les 10 min par compétition.
 LIVE_SECONDS = 600
 
@@ -50,17 +50,16 @@ def _photos(player_ids) -> dict[int, str]:
 
 
 def _slots(lineup: FantasyLineup | None, pws: dict) -> list[dict]:
-    """Les 6 places d'une équipe pour l'affichage."""
+    """Les 5 places d'une équipe pour l'affichage."""
     detail = {s["role"]: s for s in (lineup.detail or {}).get("slots", [])} if lineup else {}
     out = []
-    for slot in ROLES + ["sub"]:
+    for slot in ROLES:
         pid = (lineup.players or {}).get(slot) if lineup else None
         pw = pws.get(pid)
         d = detail.get(slot, {})
-        shown = pws.get(d.get("player")) if d.get("replaced") else pw
         out.append({
-            "slot": slot, "label": ROLE_LABELS[slot], "pw": pw, "shown": shown, "replaced": d.get("replaced"),
-            "points": d.get("points", pw.points if pw else 0) if slot != "sub" else (pw.points if pw else 0),
+            "slot": slot, "label": ROLE_LABELS[slot], "pw": pw, "shown": pw,
+            "points": d.get("points", pw.points if pw else 0),
             "captain": lineup is not None and lineup.captain == slot,
         })
     return out
@@ -119,7 +118,6 @@ def _team_context(user, comp, current, upcoming) -> dict:
             pw.photo = photos.get(pw.player_id, "")
     ctx.update({
         "upcoming_lineup": mine, "choices": [(r, choices.get(r, [])) for r in ROLES],
-        "all_choices": [pw for r in ROLES for pw in choices.get(r, [])],
         "picked": (mine.players if mine else {}), "captain": mine.captain if mine else "",
         "missing": [r for r in ROLES if not choices.get(r)], "lock_at": fantasy.lock_time(upcoming),
         "players_json": {pw.player_id: {"cost": pw.cost, "team": pw.team, "role": pw.role, "ign": pw.player.ign,
@@ -181,7 +179,7 @@ def fantasy_save(request, slug):
     if week is None:
         messages.error(request, "Il n'y a plus de semaine à composer dans cette compétition.")
     else:
-        picks = {slot: request.POST.get(slot) for slot in ROLES + ["sub"]}
+        picks = {slot: request.POST.get(slot) for slot in ROLES}
         try:
             fantasy.save_lineup(request.user, week, picks, request.POST.get("captain", ""))
             messages.success(request, f"Équipe enregistrée pour la semaine {week.number}.")

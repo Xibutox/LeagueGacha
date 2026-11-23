@@ -12,7 +12,6 @@
 .fy-slots { list-style: none; margin: 12px 0; padding: 0; display: grid; gap: 8px; }
 .fy-slot { display: grid; grid-template-columns: 92px 40px minmax(0, 1fr) auto; align-items: center; gap: 10px;
   background: var(--rift-2); border: 1px solid var(--steel); padding: 6px 10px; }
-.fy-slot.is-sub { border-style: dashed; }
 .fy-slot.is-dup { border-color: var(--danger); }
 .fy-slot-role { font: 700 1rem/1 var(--display); text-transform: none; color: var(--hextech); }
 .fy-photo-box { width: 40px; height: 40px; background: var(--abyss); }
@@ -20,7 +19,6 @@
 .fy-slot select { width: 100%; min-width: 0; padding: 8px; background: var(--abyss); color: var(--text); border: 1px solid var(--steel); font: inherit; }
 .fy-photo { display: block; width: 40px; height: 40px; object-fit: cover; object-position: top; visibility: hidden; }
 .fy-captain { display: inline-flex; gap: 4px; align-items: center; font: 700 1rem/1 var(--display); color: var(--gold); cursor: pointer; }
-.fy-sub-note { white-space: nowrap; }
 .fy-budget { display: grid; grid-template-columns: auto minmax(80px, 1fr) auto; align-items: center; gap: 14px; margin: 8px 0 14px; }
 .fy-meter { height: 8px; background: var(--abyss); border: 1px solid var(--steel); }
 .fy-meter span { display: block; height: 100%; background: var(--hextech); transition: width .2s; }
@@ -28,7 +26,6 @@
 .fy-budget.is-over #fy-cost { color: var(--danger); }
 .fy-lineup { list-style: none; margin: 8px 0; padding: 0; }
 .fy-lineup li { display: grid; grid-template-columns: 92px minmax(0, 1fr) auto; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--steel); }
-.fy-lineup li.is-replaced .fy-name { font-style: italic; }
 .fy-lineup abbr { color: var(--gold); text-decoration: none; }
 .fy-pts { font: 700 1.15rem/1 var(--display); }
 .fy-total { font: 600 1.2rem/1.2 var(--display); }

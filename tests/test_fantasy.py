@@ -96,9 +96,7 @@ def test_a_league_competition_comes_from_tournament_dates(lec):
 
 
 def lineup_ids(split):
-    by_role = {c.role: c.player_id for c in Card.objects.filter(split=split).order_by("player__ign")}
-    sub = Card.objects.filter(split=split).exclude(player_id__in=by_role.values()).first().player_id
-    return {**by_role, "sub": sub}
+    return {c.role: c.player_id for c in Card.objects.filter(split=split).order_by("player__ign")}
 
 
 def test_lineup_rules(lec, bob, split):
@@ -138,16 +136,15 @@ def test_a_week_is_scored_then_rewarded(lec, bob, split):
     week.save()
     picks = lineup_ids(split)
     fantasy.save_lineup(bob, week, picks, "Mid", paris(2027, 1, 5))
-    # Tous jouent une partie, sauf le Top : son remplaçant prend sa place.
+    # Tous jouent une partie, sauf le Top : il marque 0.
     for role in ["Jungle", "Mid", "Bot", "Support"]:
         play(lec, picks[role], paris(2027, 1, 16, 18), win=True)
-    play(lec, picks["sub"], paris(2027, 1, 17, 18), win=False, kills=8)
     fantasy.advance(comp, paris(2027, 1, 18))
     week.refresh_from_db()
     assert week.status == FantasyWeek.Status.LOCKED
     lineup = FantasyLineup.objects.get(user=bob, week=week)
     slots = {s["role"]: s for s in lineup.detail["slots"]}
-    assert slots["Top"]["replaced"] and slots["Top"]["player"] == picks["sub"]
+    assert slots["Top"]["points"] == 0 and len(lineup.detail["slots"]) == 5
     mid = week.players.get(player_id=picks["Mid"])
     assert slots["Mid"]["points"] == pytest.approx(mid.points * 1.5, abs=0.1)
     assert mid.games[0]["base"] == fantasy.game_points(mid.games[0])[0]

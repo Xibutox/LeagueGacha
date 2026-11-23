@@ -6,7 +6,7 @@ leurs vraies parties de la semaine.
   (cards/fantasy_sim.py) quand rien ne se joue.
 - Semaine du mercredi 00:00 au mardi 23:59 (heure de Paris) : l'équipe se
   compose jusqu'au mardi soir, se verrouille au début de la semaine.
-- Équipe : 5 titulaires (un par poste), 1 remplaçant, 1 capitaine (×1,5),
+- Équipe : 5 joueurs (un par poste), dont 1 capitaine (×1,5),
   dans un plafond de coût ; bonus de diversité selon le nombre d'équipes
   réelles.
 - Points d'une partie : barème d'actions (kill +3, assist +2, mort −1…)
@@ -57,8 +57,8 @@ REFERENCE_GAMES = 10
 MIN_REFERENCE_GAMES = 5
 DEFAULT_COST = 20.0
 CAPTAIN = 1.5
-#: Plafond : 6 joueurs × la moyenne de la compétition × 1,1.
-CAP_PLAYERS = 6
+#: Plafond : 5 joueurs × la moyenne de la compétition × 1,1.
+CAP_PLAYERS = 5
 CAP_MARGIN = 1.1
 #: Diversité : +5 % par équipe réelle en plus de la première, au plus +20 %.
 DIVERSITY_STEP = 5
@@ -380,16 +380,16 @@ def players_of_week(week: FantasyWeek) -> dict[int, FantasyPlayerWeek]:
 
 
 def save_lineup(user, week: FantasyWeek, picks: dict, captain: str, now: datetime | None = None) -> FantasyLineup:
-    """picks : {poste: id, "sub": id}."""
+    """picks : {poste: id}."""
     if not is_open(week, now):
         raise GameError("Cette semaine est verrouillée : ton équipe vaudra pour la suivante.")
     pool = players_of_week(week)
     owned = owned_players(user)
     chosen = {}
-    for slot in ROLES + ["sub"]:
+    for slot in ROLES:
         raw = picks.get(slot)
         if not raw:
-            raise GameError("Il faut un joueur à chaque poste, et un remplaçant.")
+            raise GameError("Il faut un joueur à chaque poste.")
         pid = int(raw)
         pw = pool.get(pid)
         if pw is None:
@@ -434,21 +434,12 @@ def diversity_bonus(teams: list[str]) -> int:
 
 
 def lineup_score(players: dict, captain: str, pws: dict[int, FantasyPlayerWeek]) -> tuple[float, dict]:
-    """Le score d'une équipe et son détail : le remplaçant prend la place du
-    premier titulaire qui n'a joué aucune partie ; le capitaine compte ×1,5
-    (sur sa place, donc aussi pour son remplaçant) ; bonus de diversité."""
-    sub = pws.get(players.get("sub"))
-    sub_used = False
+    """Le score d'une équipe et son détail : le capitaine compte ×1,5,
+    plus le bonus de diversité."""
     slots = []
     for role in ROLES:
         pw = pws.get(players.get(role))
-        entry = {"role": role, "player": players.get(role), "points": 0.0, "replaced": False}
-        if (pw is None or not pw.games) and sub is not None and sub.games and not sub_used:
-            entry.update(player=sub.player_id, replaced=True, points=sub.points)
-            sub_used = True
-            pw = sub
-        elif pw is not None:
-            entry["points"] = pw.points
+        entry = {"role": role, "player": players.get(role), "points": pw.points if pw is not None else 0.0}
         entry["team"] = pw.team if pw is not None else ""
         if role == captain:
             entry["captain"] = True
@@ -458,7 +449,7 @@ def lineup_score(players: dict, captain: str, pws: dict[int, FantasyPlayerWeek])
     div = diversity_bonus([s["team"] for s in slots if s["player"]]) if complete else 0
     base = sum(s["points"] for s in slots)
     total = round(base * (1 + div / 100), 1)
-    return total, {"slots": slots, "diversity": div, "base": round(base, 1), "sub_used": sub_used}
+    return total, {"slots": slots, "diversity": div, "base": round(base, 1)}
 
 
 # --------------------------------------------------------------------- Points
@@ -542,9 +533,9 @@ def score_week(week: FantasyWeek, until: datetime | None = None, final: bool = F
 
 
 def ideal_team(week: FantasyWeek, pws: dict[int, FantasyPlayerWeek]) -> tuple[dict, float]:
-    """Les meilleurs titulaires de la semaine dans le plafond (ramené à 5
-    joueurs), avec le meilleur en capitaine et le bonus de diversité."""
-    cap5 = week.cap * 5 / CAP_PLAYERS if week.cap else math.inf
+    """Les meilleurs titulaires de la semaine dans le plafond, avec le
+    meilleur en capitaine et le bonus de diversité."""
+    cap5 = week.cap or math.inf
     best_by_role = {r: sorted((pw for pw in pws.values() if pw.role == r), key=lambda p: -p.points)[:8]
                     for r in ROLES}
     if not all(best_by_role.values()):
