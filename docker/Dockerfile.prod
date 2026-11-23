@@ -22,7 +22,7 @@ COPY django-generic/requirements/constraints.txt ./django-generic/requirements/c
 ENV PIP_CONSTRAINT=/app/django-generic/requirements/constraints.txt
 
 COPY requirements.txt ./
-RUN pip install "./django-generic[export,events,tasks,postgres]" -r requirements.txt
+RUN pip install "./django-generic[export,events,tasks,beat,postgres]" -r requirements.txt
 
 COPY . .
 

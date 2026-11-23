@@ -352,3 +352,39 @@ class Champion(models.Model):
             "defense": self.defense,
             "magic": self.magic,
         }
+
+
+class ScheduledMatch(models.Model):
+    """Un match au calendrier Leaguepedia (table MatchSchedule) : sert à
+    planifier l'import automatique de ses parties (esport/automation.py),
+    quelques dizaines de minutes après sa fin prévue, avec des nouvelles
+    tentatives espacées tant que Leaguepedia n'a pas les scoreboards."""
+
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "à importer"
+        IMPORTED = "imported", "importé"
+        MISSING = "missing", "introuvable"
+
+    tournament = models.ForeignKey(Tournament, verbose_name="tournoi", on_delete=models.CASCADE,
+                                   related_name="schedule")
+    match_id = models.CharField("match (MatchId)", max_length=255, unique=True)
+    start = models.DateTimeField("début", null=True, blank=True)
+    team1 = models.CharField("équipe 1", max_length=200, blank=True)
+    team2 = models.CharField("équipe 2", max_length=200, blank=True)
+    best_of = models.PositiveSmallIntegerField("Bo", default=1)
+    team1_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    team2_score = models.PositiveSmallIntegerField(null=True, blank=True)
+    status = models.CharField("état", max_length=12, choices=Status.choices, default=Status.SCHEDULED)
+    attempts = models.PositiveSmallIntegerField("tentatives", default=0)
+    next_attempt = models.DateTimeField("prochaine tentative", null=True, blank=True)
+    imported_at = models.DateTimeField("importé le", null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "match au calendrier"
+        verbose_name_plural = "calendrier des matchs"
+        ordering = ["start"]
+        indexes = [models.Index(fields=["status", "next_attempt"])]
+
+    def __str__(self):
+        return f"{self.team1} – {self.team2} ({self.start:%d/%m %H:%M})" if self.start else self.match_id

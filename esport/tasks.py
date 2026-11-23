@@ -385,3 +385,121 @@ def sync_champions_operation(run: Any, images: bool = True, force_images: bool =
         f"{result['created']} champion(s) ajouté(s), {result['updated']} mis à jour, "
         f"{result['images']} image(s) téléchargée(s)."
     )
+
+
+# --------------------------------------------------------------------- Automatique
+# Les tâches planifiées (esport/automation.py, planning : esport/schedules.py).
+from generic.tasks import managed_task  # noqa: E402
+
+from . import automation  # noqa: E402
+
+QUIET = ("page",)
+
+
+def _automatic(run, work):
+    try:
+        with automation.single_run():
+            return work()
+    except automation.Busy:
+        run.note("Un autre import automatique est en cours : rien fait cette fois.")
+        return "Déjà en cours"
+
+
+@managed_task(
+    name="esport.discover_tournaments",
+    label=_("Tournois à venir"),
+    description=_(
+        "Les tournois de cette année et de la suivante des 4 ligues majeures et des internationaux de Riot, "
+        "avec leurs dates (sans les parties). Ouvre les compétitions Fantasy à venir."
+    ),
+    icon="event",
+    announce=QUIET,
+    report=QUIET,
+)
+def discover_tournaments_task(run: Any) -> str:
+    def work():
+        n = automation.discover_tournaments(LeaguepediaImporter(log=run.note))
+        from cards import fantasy
+
+        fantasy.sync_competitions()
+        return f"{n} tournoi(s) à jour"
+
+    return _automatic(run, work)
+
+
+@managed_task(
+    name="esport.sync_schedules",
+    label=_("Calendrier des matchs"),
+    description=_(
+        "Le calendrier Leaguepedia des tournois en cours ou qui commencent dans les 10 jours : "
+        "chaque match planifie l'import de ses parties après sa fin prévue."
+    ),
+    icon="calendar_month",
+    announce=QUIET,
+    report=QUIET,
+)
+def sync_schedules_task(run: Any) -> str:
+    return _automatic(run, lambda: f"{automation.sync_schedules(LeaguepediaImporter(log=run.note))} match(s) au calendrier")
+
+
+@managed_task(
+    name="esport.import_results",
+    label=_("Résultats des matchs"),
+    description=_(
+        "Importe les parties des matchs terminés (seulement les parties récentes de leur tournoi), "
+        "puis met à jour les points de la Fantasy."
+    ),
+    icon="scoreboard",
+    announce=QUIET,
+    report=QUIET,
+)
+def import_results_task(run: Any) -> str:
+    def work():
+        result = automation.import_results(LeaguepediaImporter(log=run.note))
+        comps = automation.refresh_fantasy(result["tournois"])
+        return (f"{result['importés']} match(s) importé(s), {result['en attente']} en attente, "
+                f"{result['abandonnés']} abandonné(s) ; {comps} compétition(s) Fantasy à jour")
+
+    return _automatic(run, work)
+
+
+@managed_task(
+    name="esport.consolidate",
+    label=_("Mise à jour de nuit"),
+    description=_(
+        "Les tournois en cours sans calendrier (import des parties récentes), puis les stats, cartes et "
+        "photos des splits qui ont reçu des parties."
+    ),
+    icon="bedtime",
+    announce=QUIET,
+    report=("notification",),
+    audience="staff",
+)
+def consolidate_task(run: Any) -> str:
+    def work():
+        importer = LeaguepediaImporter(log=run.note)
+        extra = automation.unscheduled_imports(importer)
+        automation.refresh_fantasy(extra)
+        n = automation.consolidate(importer, log=run.note)
+        return f"{len(extra)} tournoi(s) sans calendrier importé(s), {n} split(s) mis à jour"
+
+    return _automatic(run, work)
+
+
+try:
+    from celery import shared_task
+except ImportError:  # sans Celery (tests, développement) : pas de surveillance
+    shared_task = None
+
+if shared_task is not None:
+    @shared_task(name="esport.watch_results", ignore_result=True)
+    def watch_results() -> int:
+        """Toutes les 10 min : une requête en base. Ne lance l'import (et
+        n'écrit une exécution dans la gestion) que si un match est à importer."""
+        if not automation.due_matches().exists():
+            return 0
+        from generic.tasks import launch
+        from generic.tasks.models import TaskRun
+
+        launch("esport.import_results", trigger=TaskRun.Trigger.SCHEDULE)
+        return 1

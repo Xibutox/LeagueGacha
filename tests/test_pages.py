@@ -38,6 +38,7 @@ from esport.models import (
     Player,
     PlayerImage,
     PlayerSplitStats,
+    ScheduledMatch,
     Tournament,
 )
 from generic.testing import PageSweep
@@ -104,6 +105,8 @@ class TestEveryPage(PageSweep):
             "cards.fantasyweek": (fantasy_week := FantasyWeek.objects.create(
                 competition=fantasy_comp, number=1, start=opening.opened_at.date())),
             "cards.fantasylineup": FantasyLineup.objects.create(user=admin_user, week=fantasy_week),
+            "esport.scheduledmatch": ScheduledMatch.objects.create(
+                tournament=Tournament.objects.first(), match_id="test", start=opening.opened_at),
         }
 
     #: Les écrans en lecture seule n'ont pas de formulaire d'ajout.
@@ -161,6 +164,7 @@ class TestEveryPage(PageSweep):
         "site:cards_weeklymeta_add": (403,),
         "site:cards_fantasyweek_add": (403,),
         "site:cards_fantasylineup_add": (403,),
+        "site:esport_scheduledmatch_add": (403,),
         "cards:fantasy": (200, 302),
         "cards:fantasy_save": (405,),
     }

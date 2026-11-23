@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import defaultdict
+from datetime import timezone as dt_timezone
 
 from django.conf import settings
 from django.core.files.base import ContentFile
@@ -215,7 +216,12 @@ class LeaguepediaImporter:
         return saved
 
     # ================================================================ Parties
-    def fetch_scoreboard(self, tournament: Tournament) -> list[dict]:
+    def fetch_scoreboard(self, tournament: Tournament, since=None) -> list[dict]:
+        """Les lignes de scoreboard d'un tournoi ; avec since (datetime UTC),
+        seulement les parties jouées depuis (import après un match)."""
+        where = f"SP.OverviewPage={quote(tournament.overview_page)}"
+        if since is not None:
+            where += f" AND SP.DateTime_UTC >= {quote(since.astimezone(dt_timezone.utc).strftime('%Y-%m-%d %H:%M:%S'))}"
         return self.client.cargo(
             tables="ScoreboardPlayers=SP,ScoreboardGames=SG",
             join_on="SP.GameId=SG.GameId",
@@ -226,12 +232,17 @@ class LeaguepediaImporter:
                 "SP.TeamGold=TeamGold,SP.PlayerWin=PlayerWin,SP.Side=Side,SP.DateTime_UTC=DateTimeUTC,"
                 "SG.Gamelength_Number=GameLength"
             ),
-            where=f"SP.OverviewPage={quote(tournament.overview_page)}",
+            where=where,
             order_by="SP.UniqueLine",
         )
 
-    def import_tournament_games(self, tournament: Tournament) -> int:
-        rows = self.fetch_scoreboard(tournament)
+    def import_tournament_games(self, tournament: Tournament, since=None) -> int:
+        """Importe les parties d'un tournoi. Les lignes déjà en base sont
+        mises à jour en place (leur identifiant ne change pas : les matchs
+        simulés de la Fantasy y renvoient). Sans since, les lignes qui ne
+        sont plus sur Leaguepedia sont retirées ; avec since, seules les
+        parties jouées depuis sont lues et rien n'est retiré."""
+        rows = self.fetch_scoreboard(tournament, since=since)
         self.log(f"  {tournament.name} : {len(rows)} lignes de scoreboard")
         if not rows:
             return 0
@@ -291,13 +302,52 @@ class LeaguepediaImporter:
                 )
             )
 
+        fields = [f.name for f in GameAppearance._meta.concrete_fields
+                  if f.name not in {"id", "game_id", "tournament", "player"}]
         with transaction.atomic():
-            tournament.appearances.all().delete()
-            GameAppearance.objects.bulk_create(objs, batch_size=500)
-            tournament.games_imported = len({o.game_id for o in objs})
+            existing = {(a.game_id, a.player_id): a for a in tournament.appearances.all()}
+            new, changed = [], []
+            for o in objs:
+                old = existing.pop((o.game_id, o.player_id), None)
+                if old is None:
+                    new.append(o)
+                    continue
+                if any(getattr(old, f) != getattr(o, f) for f in fields):
+                    for f in fields:
+                        setattr(old, f, getattr(o, f))
+                    changed.append(old)
+            if since is None and existing:
+                GameAppearance.objects.filter(pk__in=[a.pk for a in existing.values()]).delete()
+            GameAppearance.objects.bulk_create(new, batch_size=500)
+            if changed:
+                GameAppearance.objects.bulk_update(changed, fields, batch_size=500)
+            tournament.games_imported = tournament.appearances.values("game_id").distinct().count()
             tournament.last_imported_at = timezone.now()
             tournament.save(update_fields=["games_imported", "last_imported_at"])
         return len(objs)
+
+    # ================================================================ Calendrier
+    def fetch_schedule(self, tournaments) -> list[dict]:
+        """Les matchs au calendrier (table MatchSchedule) de ces tournois."""
+        pages = [t.overview_page for t in tournaments]
+        full = ("MS.MatchId=MatchId,MS.OverviewPage=OverviewPage,MS.DateTime_UTC=DateTimeUTC,"
+                "MS.Team1=Team1,MS.Team2=Team2,MS.BestOf=BestOf,MS.Team1Score=Team1Score,"
+                "MS.Team2Score=Team2Score,MS.Winner=Winner")
+        # Sans les scores si Leaguepedia refuse un champ : le nombre de
+        # parties attendues se déduit alors du Bo.
+        minimal = ("MS.MatchId=MatchId,MS.OverviewPage=OverviewPage,MS.DateTime_UTC=DateTimeUTC,"
+                   "MS.Team1=Team1,MS.Team2=Team2,MS.BestOf=BestOf")
+        rows = []
+        for batch in chunked(pages, 20):
+            where = in_clause("MS.OverviewPage", batch)
+            try:
+                rows += self.client.cargo(tables="MatchSchedule=MS", fields=full, where=where,
+                                          order_by="MS.DateTime_UTC")
+            except LeaguepediaError as exc:
+                self.log(f"! Calendrier sans les scores ({exc})")
+                rows += self.client.cargo(tables="MatchSchedule=MS", fields=minimal, where=where,
+                                          order_by="MS.DateTime_UTC")
+        return rows
 
     # ================================================================ Joueurs
     PLAYER_FIELDS = (

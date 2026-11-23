@@ -27,6 +27,7 @@ from .models import (
     Player,
     PlayerImage,
     PlayerSplitStats,
+    ScheduledMatch,
     Split,
     Team,
     Tournament,
@@ -751,3 +752,29 @@ class ChampionResource(ModelResource):
         if hasattr(champion, "cards_count"):
             return champion.cards_count
         return champion.card_affinities.count()
+
+
+@register(ScheduledMatch)
+class ScheduledMatchResource(ModelResource):
+    icon = "event_upcoming"
+    group = GROUP
+    order = 20
+    label_plural = _("calendrier des matchs")
+    description = _(
+        "Les matchs au calendrier Leaguepedia des tournois en cours : chacun déclenche l'import de ses parties "
+        "après sa fin prévue (Bo × 45 min + 30 min), avec de nouvelles tentatives tant que Leaguepedia ne les a pas."
+    )
+    history = False
+
+    list_display = ("start", "tournament", "team1", "team2", "best_of", "status", "attempts", "next_attempt")
+    list_filter = ("status",)
+    list_select_related = ("tournament",)
+    search_fields = ("team1", "team2", "tournament__name")
+    ordering = ("-start",)
+    readonly_fields = ("tournament", "match_id", "start", "team1", "team2", "best_of", "team1_score", "team2_score",
+                       "attempts", "imported_at")
+    fields = ("tournament", "match_id", "start", "team1", "team2", "best_of", "team1_score", "team2_score",
+              "status", "attempts", "next_attempt", "imported_at")
+
+    def has_add_permission(self, request):
+        return False

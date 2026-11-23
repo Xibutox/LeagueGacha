@@ -10,3 +10,4 @@ class CardsConfig(AppConfig):
         from . import catalog
 
         catalog.connect_signals()
+        from . import tasks  # noqa: F401 - les tâches planifiées, déclarées au démarrage

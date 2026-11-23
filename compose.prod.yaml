@@ -70,7 +70,7 @@ services:
   migrate:
     <<: *app
     restart: "no"
-    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters && python manage.py planifier"
 
   # Si le calcul des notes a changé, recalcul de tout, en parallèle du
   # site (plusieurs minutes sur une Raspberry : le site ne l'attend pas).
@@ -78,15 +78,6 @@ services:
     <<: *app
     restart: "no"
     command: sh -c "python manage.py recompute_cards --si-besoin; python manage.py sync_faille --si-besoin"
-    depends_on:
-      migrate:
-        condition: service_completed_successfully
-
-  # La Fantasy League : semaines, points, matchs simulés et récompenses,
-  # toutes les 3 h (cards/fantasy.py). Basse priorité, comme les imports.
-  fantasy:
-    <<: *app
-    command: nice -n 10 python manage.py fantasy_tick --boucle
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -117,6 +108,16 @@ services:
     # Les imports passent après les pages : priorité basse (nice), et un
     # seul calcul à la fois par défaut (WORKER_CONCURRENCY).
     command: nice -n 15 celery -A config worker --loglevel=info --concurrency=${WORKER_CONCURRENCY:-1}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  # Le planning des mises à jour automatiques (esport/schedules.py) :
+  # imports Leaguepedia après les matchs, calendrier, nuit, Fantasy. Il ne
+  # fait qu'envoyer les tâches au worker, qui les fait une à une.
+  beat:
+    <<: *app
+    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
     depends_on:
       migrate:
         condition: service_completed_successfully

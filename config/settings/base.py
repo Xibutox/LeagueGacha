@@ -286,6 +286,17 @@ LOGGING = logging_config(
 )
 EMAIL_SUBJECT_PREFIX = "[LeagueGacha] "
 CELERY_WORKER_HIJACK_ROOT_LOGGER = False
+CELERY_TIMEZONE = TIME_ZONE
+
+# Les mises à jour automatiques (esport/schedules.py) : django-celery-beat,
+# quand il est installé (extra « beat » de django-generic, images Docker).
+try:
+    import django_celery_beat  # noqa: F401
+except ImportError:
+    pass
+else:
+    INSTALLED_APPS.append("django_celery_beat")
+    CELERY_BEAT_SCHEDULER = "django_celery_beat.schedulers:DatabaseScheduler"
 
 # -- Le framework ------------------------------------------------------------
 
