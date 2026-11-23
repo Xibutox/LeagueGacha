@@ -1,5 +1,5 @@
 """Les mises à jour automatiques depuis Leaguepedia, planifiées par les
-tâches de esport/tasks.py et cards/tasks.py (django-celery-beat).
+tâches de esport/tasks.py et cards/tasks.py (celery beat, esport/schedules.py).
 
 Principe : charger le serveur le moins possible tout en ayant les
 résultats vite.

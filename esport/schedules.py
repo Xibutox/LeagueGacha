@@ -1,4 +1,5 @@
-"""Le planning des mises à jour automatiques (django-celery-beat).
+"""Le planning des mises à jour automatiques, lu par `celery beat`
+(CELERY_BEAT_SCHEDULE dans config/settings/base.py).
 
 | Tâche                         | Quand                          | Coût                                  |
 |-------------------------------|--------------------------------|---------------------------------------|
@@ -9,12 +10,11 @@
 | esport.consolidate            | 04:30                          | stats et cartes des splits du jour     |
 | cards.fantasy_hourly          | toutes les heures à :05        | calcul en base                         |
 
-Les heures sont celles de Paris. ensure_schedules() crée ce qui manque et
-ne touche pas à un planning modifié dans la gestion (sauf force=True).
+Heures de Paris (CELERY_TIMEZONE). Pour changer un horaire : ici, puis
+redéployer. (django-celery-beat, qui permettrait de le faire depuis la
+gestion, ne gère pas encore Django 6.1.)
 """
 from __future__ import annotations
-
-from django.apps import apps
 
 SCHEDULES = [
     # nom, tâche, intervalle (minutes) ou crontab (minute, heure, jours de la semaine)
@@ -26,30 +26,18 @@ SCHEDULES = [
 ]
 
 
-def available() -> bool:
-    return apps.is_installed("django_celery_beat")
-
-
-def ensure_schedules(force: bool = False, timezone_name: str = "Europe/Paris") -> list[str]:
-    """Crée les plannings manquants. Renvoie les noms créés (ou mis à jour)."""
-    if not available():
-        return []
-    from django_celery_beat.models import CrontabSchedule, IntervalSchedule, PeriodicTask
-
-    done = []
+def beat_schedule() -> dict:
+    """Le planning au format de Celery (vide sans Celery)."""
+    try:
+        from celery.schedules import crontab
+    except ImportError:
+        return {}
+    out = {}
     for name, task, minutes, cron in SCHEDULES:
-        existing = PeriodicTask.objects.filter(name=name).first()
-        if existing is not None and not force:
-            continue
-        values = {"task": task, "enabled": True, "interval": None, "crontab": None}
         if minutes:
-            values["interval"], _ = IntervalSchedule.objects.get_or_create(every=minutes,
-                                                                           period=IntervalSchedule.MINUTES)
+            schedule = minutes * 60.0
         else:
             minute, hour, dow = cron
-            values["crontab"], _ = CrontabSchedule.objects.get_or_create(
-                minute=minute, hour=hour, day_of_week=dow, day_of_month="*", month_of_year="*",
-                timezone=timezone_name)
-        PeriodicTask.objects.update_or_create(name=name, defaults=values)
-        done.append(name)
-    return done
+            schedule = crontab(minute=minute, hour=hour, day_of_week=dow)
+        out[name] = {"task": task, "schedule": schedule}
+    return out

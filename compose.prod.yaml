@@ -70,7 +70,7 @@ services:
   migrate:
     <<: *app
     restart: "no"
-    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters && python manage.py planifier"
+    command: sh -c "python manage.py migrate --noinput && python manage.py collectstatic --noinput && python manage.py init_boosters"
 
   # Si le calcul des notes a changé, recalcul de tout, en parallèle du
   # site (plusieurs minutes sur une Raspberry : le site ne l'attend pas).
@@ -117,7 +117,7 @@ services:
   # fait qu'envoyer les tâches au worker, qui les fait une à une.
   beat:
     <<: *app
-    command: celery -A config beat --loglevel=info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    command: celery -A config beat --loglevel=info --schedule /tmp/celerybeat-schedule
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -149,14 +149,13 @@ def test_one_automatic_import_at_a_time():
         pass
 
 
-def test_the_schedule_is_planned_when_beat_is_installed():
-    assert {t for _, t, _, _ in schedules.SCHEDULES} >= {"esport.watch_results", "esport.sync_schedules",
-                                                          "esport.consolidate", "cards.fantasy_hourly"}
-    if not schedules.available():
-        assert schedules.ensure_schedules() == []
-        return
-    from django_celery_beat.models import PeriodicTask
+def test_the_schedule_names_known_tasks():
+    from generic.tasks import registry
 
-    assert len(schedules.ensure_schedules()) == len(schedules.SCHEDULES)
-    assert schedules.ensure_schedules() == []  # déjà en place
-    assert PeriodicTask.objects.filter(task="esport.watch_results", interval__every=10).exists()
+    tasks = {t for _, t, _, _ in schedules.SCHEDULES}
+    assert tasks >= {"esport.watch_results", "esport.sync_schedules", "esport.consolidate", "cards.fantasy_hourly"}
+    managed = {d.name for d in registry.all()}
+    # Les tâches sans exécution dans la gestion sont de simples tâches Celery.
+    assert tasks - {"esport.watch_results", "cards.fantasy_hourly"} <= managed
+    beat = schedules.beat_schedule()
+    assert beat == {} or len(beat) == len(schedules.SCHEDULES)
